@@ -161,7 +161,7 @@ These are proposals. None of this code exists in the tree. The file is `port/src
 ### The record (plain C, for `ixion_passenger.h`)
 
 ```c
-/* Proposed: ixion/include/ixion_passenger.h. Plain C, fixed-width fields only. */
+/* Proposed: include/ixion_passenger.h. Plain C, fixed-width fields only. */
 #include <stdint.h>
 #include "ixion_api.h"   /* IXION_GAME_DARK_CLOUD, IXION_GAME_DARK_CHRONICLE */
 

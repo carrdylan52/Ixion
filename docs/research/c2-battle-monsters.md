@@ -8,7 +8,7 @@ Source scope: `ps2/src` and `ps2/include` in the ChronicleTwo checkout (branch `
 
 Not covered: the Ridepod's combat in depth (only its HP drain and defence are noted), fishing and the Spheda sub-game, the monster script bytecode (data, not code), and the time-of-day weapon logic beyond what `RefreshParamater` touches.
 
-Line numbers refer to the checkout named above. Inference is labelled as inference. The DC1 comparison leans on `ixion/docs/research/c1-battle-monsters.md` only where a contrast is useful.
+Line numbers refer to the checkout named above. Inference is labelled as inference. The DC1 comparison leans on `docs/research/c1-battle-monsters.md` only where a contrast is useful.
 
 ## Key facts
 
@@ -183,4 +183,4 @@ Party statuses come from the row bits and amulets. Each party status uses a fixe
 - The meaning of the 0x4000 status bit and of element channels 4-7.
 - Whether the badge number 11 and 12 bonuses (1.25x and half drain) are the only special badges, and how `get_gajji_id_from_monster_progress_table` maps forms to box records (not traced).
 - The Ridepod's damage path and its kinds (11 to 14) beyond the table counts.
-- DC1 side (for the crossing): the six-character layout and the 200-plus owner encoding in `ixion/docs/research/c1-battle-monsters.md` do not map onto DC2's four party types or its slot-0-only test. Which DC1 characters become playable in DC2's slot-0 model is a design question, not a code one.
+- DC1 side (for the crossing): the six-character layout and the 200-plus owner encoding in `docs/research/c1-battle-monsters.md` do not map onto DC2's four party types or its slot-0-only test. Which DC1 characters become playable in DC2's slot-0 model is a design question, not a code one.

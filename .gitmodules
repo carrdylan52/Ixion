@@ -1,0 +1,8 @@
+[submodule "games/chronicle"]
+	path = games/chronicle
+	url = https://github.com/carrdylan52/Chronicle.git
+	branch = ixion
+[submodule "games/chronicletwo"]
+	path = games/chronicletwo
+	url = https://github.com/carrdylan52/ChronicleTwo.git
+	branch = ixion

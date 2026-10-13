@@ -10,7 +10,7 @@ inventory, and the port's changes to the item accessors. Read from the `master` 
 Chronicle decomposition (ps2/src is retail, port/src is the PC port). Static reading only; no
 build or run. Table counts and per-owner ranges were checked by parsing the source tables.
 
-Section 4 of the design draft in ChronicleTwo (`chronicletwo:ixion/docs/DESIGN.md:195-240`)
+Section 4 of the design draft in ChronicleTwo (`ixion:docs/DESIGN.md:195-240`)
 depends on several Chronicle weapon rules described here. The Ixion hooks section notes where
 the code bears on that draft (the 60% carry and the damage-type carry).
 
@@ -300,7 +300,7 @@ rotates the top priority by one. `chronicle:ps2/src/stockitem.cpp:14-36`, `:160-
 
 ## Ixion hooks
 
-The Ixion design draft (`chronicletwo:ixion/docs/DESIGN.md:195-240`) sketches a loaner
+The Ixion design draft (`ixion:docs/DESIGN.md:195-240`) sketches a loaner
 weapon, a one-way synthesis sphere, and a class map. The Chronicle side has the pieces it needs.
 
 - **Canonical item key.** Build the key from `ComItemInfo` (kind, index, msg) plus the

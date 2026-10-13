@@ -128,7 +128,7 @@ Neither game has a shared item identity. Each item is one row in its own table. 
 - **Class-only**: same weapon or item family but no named match (Max's melee weapons and Goro's hammers and Ungaga's sticks).
 - **None**: no counterpart in the other world (DC2 ridepod parts and costumes; DC1 Atla as items).
 
-The design draft already assumes per-world IDs with a canonical key (`chronicletwo:ixion/docs/DESIGN.md:188`, Items row of the save table). This note supplies the crosswalk rows that the draft leaves open.
+The design draft already assumes per-world IDs with a canonical key (`ixion:docs/DESIGN.md:188`, Items row of the save table). This note supplies the crosswalk rows that the draft leaves open.
 
 ### 2. Proposed crosswalk structure
 
@@ -146,13 +146,13 @@ Canonical record (one per crossing-relevant item):
 
 Pair table: one row per DC1 item that has a candidate DC2 counterpart, plus one row per DC2 item with no DC1 counterpart. The first pass can be seeded from the name matches (38 weapon names, 12 exact gem names, and the five element crystals) and the class map (section 3), and must be verified by a person against the in-game names before use.
 
-Carry rules (proposal, consistent with `chronicletwo:ixion/docs/DESIGN.md:188-235`):
+Carry rules (proposal, consistent with `ixion:docs/DESIGN.md:188-235`):
 
 - Weapons: carry through a loaner (class map) or through a sphere/spectol (one-way); never copy the model.
 - Attachments: element and gem attachments map by name (EQUIV); stat and slayer attachments are CLASS only; DC2 coins and DC2 monster drop are NONE.
 - Consumables and key items: carry by EQUIV where the name matches; otherwise cargo.
 - Gate and door keys: do not carry (proposal). Keys are dungeon-keyed (section 5), so an Ixion gate key should be a dungeon-keyed rule, not an item rule.
-- Atla and geostones: stay local (`chronicletwo:ixion/docs/DESIGN.md:188`). Both are floor objects that feed Georama; they are a parallel system, not items.
+- Atla and geostones: stay local (`ixion:docs/DESIGN.md:188`). Both are floor objects that feed Georama; they are a parallel system, not items.
 - Georama parts: local to the town; stock counts (`build_parts_num`) are per save and can be shared across towns because part IDs are one space.
 - Gilda: one canonical pool (DESIGN section 4.3). DC1 cap 65535 (or 0xFFFF clamp), DC2 cap 999999.
 
@@ -167,7 +167,7 @@ Carry rules (proposal, consistent with `chronicletwo:ixion/docs/DESIGN.md:188-23
 | Ring, armlet, armband (magic) | Ruby (16) | Monica magic (19) | CLASS (inference) |
 | Fishing rod | none (dungeon item 185) | Fishing Rod (302), Lure Rod (303) | NONE for combat use |
 
-The class map is the same shape as `chronicletwo:ixion/docs/DESIGN.md:211-218` but covers both full lists and not only the Max melee rows.
+The class map is the same shape as `ixion:docs/DESIGN.md:211-218` but covers both full lists and not only the Max melee rows.
 
 ### 4. Atla, geostones and Georama parts
 
@@ -267,7 +267,7 @@ Field order in each POS row is index, map number, loop, area, dungeon, floor, re
 
 ## Ixion hooks
 
-- **Crosswalk file.** Add a pair table keyed by `world:native_id` with the relation kind and confidence (section 2). The first seed is the 38 weapon name matches, the 12 exact gem matches and the five element crystals, filtered by the class map. This is data, not code, so it fits the design's translation-table idea (`chronicletwo:ixion/docs/DESIGN.md:236-248`).
+- **Crosswalk file.** Add a pair table keyed by `world:native_id` with the relation kind and confidence (section 2). The first seed is the 38 weapon name matches, the 12 exact gem matches and the five element crystals, filtered by the class map. This is data, not code, so it fits the design's translation-table idea (`ixion:docs/DESIGN.md:236-248`).
 - **Weapon routing.** The owner byte decides which character can carry a DC1 weapon (`WeaponList[].owner`) and the DC2 `ConvertUsedItemType` family decides the slot. A crossing that inserts a DC2 item into a DC1 `chara_weapons` slot must set the owner byte, or the item will be routed to the wrong character. The routing at `chronicle:ps2/src/dngstatusdata.cpp:431` reads `ItemPutListTbl12_bytes[750 + item_id * 76]`, not `WeaponList[].owner`, so the owner-byte rule is unverified.
 - **Spectol as sphere analogue.** For a DC1 weapon crossing into DC2, a sphere-type result can use the spectol source kinds (weapon at level 5 or more keeps parameters). For a DC2 spectol crossing into DC1, the `SPECTOL_TYPE_WEAPON` path is the closest DC2 source of a carried weapon's stats. The 60% factor is DC1's sphere rule (`chronicle:ps2/src/weaponlevelup.cpp:448-530`), not a DC2 rule (`chronicletwo:ps2/include/userdata.hpp:215-222`). Which rate a crossing uses is a design choice (inference).
 - **Gate keys by dungeon.** Resolve a gate key from `(world, dungeon, floor)` with `GetGateKeyIndex` (DC2, `chronicletwo:ps2/src/dng_event.cpp:889`) or `gate_key_no` (DC1, `chronicle:ps2/src/dungeonmap.cpp:3617`), not from the item the player carries.
@@ -282,7 +282,7 @@ Field order in each POS row is index, map number, loop, area, dungeon, floor, re
 - **Legacy DC1 weapon aliases.** DC1 has two mappings for legacy IDs 21-80 (banded `TransWepNo` and the linear `+256` in `GetCommonItemInfo`), which disagree. The existing item note has the detail (`chronicle:ps2/src/itemdata.cpp:2144-2146`). Any Ixion path that feeds legacy DC1 IDs to the accessors gets a wrong weapon.
 - **Name matches are not class matches.** Some of the 38 exact weapon-name matches cross classes (Flamingo, Frozen Tuna, Big Bucks Hammer, Angel Shooter). A name seed must be checked against the class map before it is used.
 - **DC2 weapon elements are four, DC1 are five.** Holy has no DC2 weapon element. A holy DC1 weapon crossing has no element to carry and needs a rule (for example, carry the slot and drop it, or map to the DC2 holy flag `WEAPON_SPECIAL_HOLY_WATER`, `chronicletwo:ps2/include/gamedata.hpp:46-70`).
-- **Geostones are not items.** The design draft's "Geostone items stay local" (`chronicletwo:ixion/docs/DESIGN.md:188`) is a floor flag in code. Treat it as a floor event, not a row in the item crosswalk.
+- **Geostones are not items.** The design draft's "Geostone items stay local" (`ixion:docs/DESIGN.md:188`) is a floor flag in code. Treat it as a floor event, not a row in the item crosswalk.
 - **Demon Shaft has no Atla table and no door route.** DC1 `AtraAppearData` has six tables (dungeons 0-5). Demon Shaft's world-map entry is MapNo 60 (sub map `s50`). The town-door arithmetic `NowEditMap + 0xC8` reaches dungeons 0-4 only, for towns 0-4 (`chronicle:ps2/src/editloop.cpp:2030-2033`).
 - **Moon Flower Georama has 13 part blocks.** The other four towns have 48 to 56. The `EDIT_PARTS_NUM` header says 58. Moon Flower may be incomplete in the data, or the header is an allocation size. Confirm before using Moon Flower as a build target.
 - **Georama part stock is one space.** Because part IDs are shared across towns, `build_parts_num` is one counter for all towns. A part stock from one town can be spent in another. The names agree for every shared ID, so one shared counter may be intended (inference). Any Ixion change to town-local stock must split the counter.

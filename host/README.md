@@ -3,15 +3,15 @@
 `ixion.exe` runs Dark Cloud and Dark Chronicle as two game modules (`ixion_c1.dll`, `ixion_c2.dll`)
 in one process and switches between them with F10. `ixion_fiber_smoke.exe` tests the fiber
 switching the host depends on, with no games and no SDL. The host is Windows-only for v0. It links
-only SDL3 and never includes game headers. The module ABI is `ixion/include/ixion_api.h`; the design
-is `ixion/docs/HOP-V0.md`.
+only SDL3 and never includes game headers. The module ABI is `include/ixion_api.h`; the design
+is `docs/HOP-V0.md`.
 
 ## Build
 
 From a checkout with the Kazarov dependency root (`.kazarov/windows/deps`):
 
 ```
-powershell -File ixion/host/build-windows.ps1 -Deps <deps root> -Build <build dir>
+powershell -File host/build-windows.ps1 -Deps <deps root> -Build <build dir>
 ```
 
 The script configures with the llvm-mingw `clang++`, builds `ixion` and `ixion_fiber_smoke`, and

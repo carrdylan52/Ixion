@@ -15,14 +15,14 @@ names with different meanings. `SaveData` is a pointer in Dark Cloud
 runtime: one window, one Vulkan device, one mixer, one clock, one PS2 thread scheduler.
 
 So each game becomes a module (`ixion_c1.dll`, `ixion_c2.dll`) that keeps all of that inside and
-exports only `ixion_get_api` (`ixion/include/ixion_api.h`). The host gives each game a fiber and
+exports only `ixion_get_api` (`include/ixion_api.h`). The host gives each game a fiber and
 runs it until the game reaches a checkpoint at the end of a frame, where it may switch to the other
 game. A parked game's stacks, globals, GPU resources and window stay resident, so resuming it is
 instant and loses nothing.
 
 ## The pieces
 
-### 1. The ABI (`ixion/include/ixion_api.h`)
+### 1. The ABI (`include/ixion_api.h`)
 
 Plain C. The module gets `IxionHost` (event queue, checkpoint, log) and offers `IxionApi` (bind, run,
 activate, window, inspect). See the header for the exact contract.
@@ -75,7 +75,7 @@ For each port (`chronicle:port`, `chronicletwo:port`):
   `IXION_EXPORT`) is exported. The ABI header comes from `IXION_API_DIR`. The standalone executable
   and tests are unchanged.
 
-### 4. The host (`ixion/host`)
+### 4. The host (`host`)
 
 A small standalone CMake project that links only SDL3; it never sees game headers.
 
@@ -100,16 +100,16 @@ A small standalone CMake project that links only SDL3; it never sees game header
   nonzero otherwise. This is the automatic acceptance test.
 - Quitting ends the process directly (`TerminateProcess` on itself) once logs are flushed; v0 does
   not attempt an orderly shutdown of two parked games.
-- `ixion/host/fiber_smoke.cpp`: a self-test with no games: root fiber, two game fibers, one of which
+- `host/fiber_smoke.cpp`: a self-test with no games: root fiber, two game fibers, one of which
   makes a nested fiber and checkpoints from it; checks resume order and that the x87/SSE control
   words survive switches.
 
 ## Building and running (Windows, llvm-mingw)
 
-1. Build Dark Chronicle with `-DIXION_BUILD_PLUGIN=ON -DIXION_API_DIR=<ixion/include>`, giving
+1. Build Dark Chronicle with `-DIXION_BUILD_PLUGIN=ON -DIXION_API_DIR=<this repo>/include`, giving
    `ixion_c2.dll` beside `darkchronicle.exe`.
 2. Build Dark Cloud the same way, giving `ixion_c1.dll`.
-3. Build `ixion/host`, giving `ixion.exe` and `ixion_fiber_smoke.exe`.
+3. Build `host`, giving `ixion.exe` and `ixion_fiber_smoke.exe`.
 4. Stage `ixion.exe`, both modules and one shared set of runtime libraries (SDL3, libc++, libunwind,
    winpthread, FFmpeg) in one folder. Both modules must load the same SDL3.dll.
 5. Run:

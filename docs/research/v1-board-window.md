@@ -228,7 +228,7 @@ to `IxionApi`, bump the ABI version, and let the host read a member only when `a
 
 ## Proposed Ixion code
 
-### `ixion/include/ixion_api.h` (ABI v2 additions)
+### `include/ixion_api.h` (ABI v2 additions)
 
 ```c
 typedef struct IxionStation {
@@ -260,7 +260,7 @@ typedef struct IxionPassenger {
  */
 ```
 
-### `ixion/host/board.hpp`
+### `host/board.hpp`
 
 ```cpp
 // The Ixion Board: a host-drawn SDL_Renderer window. Owned by the host; never touches a game.
@@ -309,7 +309,7 @@ void BoardDraw(Board *b);                    // visible and dirty only; once per
 }  // namespace ixion
 ```
 
-### `ixion/host/board.cpp` (key bodies)
+### `host/board.cpp` (key bodies)
 
 ```cpp
 bool BoardCreate(Board *b) {
@@ -385,7 +385,7 @@ void BoardDraw(Board *b) {
 }
 ```
 
-### `ixion/host/host.cpp` changes (proposed)
+### `host/host.cpp` changes (proposed)
 
 | Where | Change |
 |---|---|

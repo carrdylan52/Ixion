@@ -1,7 +1,7 @@
 # Ixion architecture options
 
 Status: architecture decision draft, written after the Hop v0 prototype and the research pass in
-`ixion/docs/research/`. It compares the ways two PC ports could become one game, recommends one,
+`docs/research/`. It compares the ways two PC ports could become one game, recommends one,
 says where it hooks into each port, and breaks the next wave of work into units.
 
 ## Conventions
@@ -14,7 +14,7 @@ says where it hooks into each port, and breaks the next wave of work into units.
   ChronicleTwo pins as 3dc38ce. Chronicle pins the older layout a0a5ff8 (`port/`). The embedded-mode
   commits Hop v0 uses are 3366d98 (current layout) and a5bb691 (older layout); neither is on upstream
   main.
-- `ixion/...` is this folder. `research/<name>.md` is a note in `ixion/docs/research/`.
+- `ixion/...` is this folder. `research/<name>.md` is a note in `docs/research/`.
 - **inference** marks a claim reached by reasoning, not by reading code or running it. **unmeasured**
   marks a cost that nobody has measured yet.
 
@@ -61,12 +61,12 @@ and can be carried over a pipe.
 
 **A1, cold hand-off.** One game runs at a time. A launcher writes a bundle, closes the origin and
 starts the destination at the chosen place. This is the shape of the design draft's Phase 0
-(`ixion/docs/DESIGN.md` section 6, "two launches with a bundle").
+(`docs/DESIGN.md` section 6, "two launches with a bundle").
 
 - Costs:
   - Every crossing is a cold boot: window, Vulkan device and pipeline cache, data index (DC2 walks
     7,511 files, `research/c2-data-loading.md`), arena commit and the game's own boot path. The design
-    target is under 10 seconds (`ixion/docs/DESIGN.md` 3.5). Unmeasured.
+    target is under 10 seconds (`docs/DESIGN.md` 3.5). Unmeasured.
   - Return is never frame-exact. The origin reboots from a save, and DC1 has no save on shutdown
     (`chronicle:port/src/main.cpp:450-466`), so the crossing must write a save first.
   - The only startup jumps are debug paths. DC1 `--jump` forces `DebugMode` on
@@ -88,18 +88,18 @@ hidden game waits at a frame-end checkpoint until told to resume.
   each opening the same gamepads, and passenger records serialised over the channel.
 - Gains: crash isolation with frame-exact resume.
 - Verdict: the fallback if in-process hosting proves unstable. The module ABI
-  (`ixion/include/ixion_api.h`) passes only plain C types, so the same contract can be carried over a
+  (`include/ixion_api.h`) passes only plain C types, so the same contract can be carried over a
   pipe.
 
 ### Option B: one process, each game a hidden-symbol module
 
 Each game is built as a shared library that exports only `ixion_get_api` and keeps its globals and
 its private copy of Kazarov inside. A host loads both, runs each on a fiber and switches at frame ends.
-This is Hop v0 (`ixion/docs/HOP-V0.md`).
+This is Hop v0 (`docs/HOP-V0.md`).
 
 - Evidence: built and passing acceptance 1 to 4 on Windows. Both games boot in one process,
   `--auto-switch 120:20` makes twenty crossings, and a parked game's logic frames, clock ticks, map and
-  position do not change while parked (`ixion/docs/HOP-V0.md`, Status).
+  position do not change while parked (`docs/HOP-V0.md`, Status).
 - How the symbol problem disappears: `ixion_c2` links the same objects as the executable with
   `-Wl,--exclude-all-symbols` (`chronicletwo:port/CMakeLists.txt`, `IXION_BUILD_PLUGIN`). Same-named
   private globals in two DLLs link (probe in `research/symbol-collisions.md`), and Hop v0 shows them
@@ -219,14 +219,14 @@ Two rules hold across all layers:
 1. **Game state is touched only on the game's own fiber, at a frame boundary.** The host never reads
    or writes a module's globals. Host calls into a parked module only copy data into or out of a
    mailbox; the module services the mailbox when it next reaches its checkpoint. This extends the v0
-   rule for `activate` (`ixion/include/ixion_api.h`).
+   rule for `activate` (`include/ixion_api.h`).
 2. **A parked game is frozen.** It does not run, its clock is rebased on resume, and nothing it owns
    is edited while it is parked. Round trips restore from the ledger, never from the destination's
-   approximation (`ixion/docs/DESIGN.md` 4.1 rule 3).
+   approximation (`docs/DESIGN.md` 4.1 rule 3).
 
 ### 2.1 L0: host
 
-Existing (`ixion/host/host.cpp`): SDL init and the only event pump, `RouteEvent` (:271), the root
+Existing (`host/host.cpp`): SDL init and the only event pump, `RouteEvent` (:271), the root
 fiber and one fiber per game, `HostCheckpoint` (:171), `Travel` (:403, show and hide only), `MainLoop`
 (:450), receipts (`LogReceipt`, :116) and `--auto-switch`.
 
@@ -235,14 +235,14 @@ To add:
 - **Event routing fixes** (`research/v1-board-window.md` section 4): drop events for unknown window
   ids instead of sending them to the active game (`host.cpp:289-290`); split close-requested by owner;
   flush or mask input held across a crossing.
-- **Board** (`ixion/host/board.cpp`): a hidden SDL_Renderer window listing stations from both games,
+- **Board** (`host/board.cpp`): a hidden SDL_Renderer window listing stations from both games,
   receipts and the passenger manifest. F9 is free in both games and both Kazarov layouts.
-- **Travel controller** (`ixion/host/travel.cpp`): the state machine in section 2.3, with timeouts,
+- **Travel controller** (`host/travel.cpp`): the state machine in section 2.3, with timeouts,
   refusal reasons and rollback.
-- **Ledger** (`ixion/host/ledger.cpp`): holds the raw origin passenger record (shadow), applies the
-  data-driven translation rows (`ixion/docs/DESIGN.md` 4.5) in each direction, and computes write-back
+- **Ledger** (`host/ledger.cpp`): holds the raw origin passenger record (shadow), applies the
+  data-driven translation rows (`docs/DESIGN.md` 4.5) in each direction, and computes write-back
   on return.
-- **Bundle** (`ixion/host/bundle.cpp`): see section 2.4.
+- **Bundle** (`host/bundle.cpp`): see section 2.4.
 - **Exit policy**: a module that finishes or fails returns to the host (section 2.2); the host shows
   the reason and keeps the other game alive.
 - **Debug travel**: F10 stays a raw switch for testing, but is refused while a passenger is abroad, so
@@ -331,7 +331,7 @@ moment and validates the destination.
    `request_travel`. The host checks that the origin is at a station state (module's `travel_status`
    or a dry-run flag) and that the destination station is reached.
 2. **Manifest.** The host asks the origin for a passenger export, translates it through the ledger
-   and shows CARRIED and LEFT BEHIND (`ixion/docs/DESIGN.md` 3.5).
+   and shows CARRIED and LEFT BEHIND (`docs/DESIGN.md` 3.5).
 3. **Depart.** The host writes the pending-crossing record (section 2.4), keeps the raw origin record
    as shadow, deactivates and parks the origin. The origin stays loaded where it is, which is the
    station the player will return to.
@@ -343,7 +343,7 @@ moment and validates the destination.
    parked, so there is nothing to debit and nothing is counted twice.
 6. **Rollback.** A refusal, a timeout or a load failure before step 4 completes resumes the origin
    with no import and clears the pending record ("the weapon returns unchanged and the fare is
-   refunded", `ixion/docs/DESIGN.md` 3.5).
+   refunded", `docs/DESIGN.md` 3.5).
 
 **In-game triggers** (`research/v1-time-gates.md`):
 
@@ -358,7 +358,7 @@ moment and validates the destination.
 
 ### 2.4 L3: passenger state bridge
 
-**Record.** One plain-C header, `ixion/include/ixion_passenger.h`, shared by host and both modules.
+**Record.** One plain-C header, `include/ixion_passenger.h`, shared by host and both modules.
 The two research proposals differ (`research/v1-c1-passenger-state.md` has one weapon with five
 elements and u16 gilda; `research/v1-c2-passenger-state.md` has two weapon slots, four elements,
 durability and absorb). Reconcile into one record with world-tagged native ids: `home_game`,
@@ -380,8 +380,8 @@ ids.
 Every field a module reads or writes gets an `offsetof` static assertion, because the existing
 assertions only check total sizes (`research/c1-save.md`).
 
-**Ledger and translation.** Rows are data (`ixion/data/translate.tsv`, schema in
-`ixion/docs/DESIGN.md` 4.5): HP as a ratio, defence as a fraction of cap, one gilda pool with the
+**Ledger and translation.** Rows are data (`data/translate.tsv`, schema in
+`docs/DESIGN.md` 4.5): HP as a ratio, defence as a fraction of cap, one gilda pool with the
 excess over DC1's limit held, thirst against the DRY bit, ailments cleared except knocked out, and
 weapons as loaners mapped through a class table (`research/crosswalk-characters.md`). Item keys are
 always world-prefixed, because the two number spaces interleave (`research/crosswalk-items-world.md`).
@@ -390,15 +390,15 @@ always world-prefixed, because the two number spaces interleave (`research/cross
 roots live in its private Kazarov copy, so a per-module save root is per game, not per process. An
 Ixion save is therefore a folder holding `dc1/` and `dc2/` save roots plus `ixion.json` (ledger,
 manifest, pending-crossing record, generation counters). Each game saves natively into its own
-sub-root, which satisfies "Ixion never writes to the native save slots" (`ixion/docs/DESIGN.md` 3.6)
-without a save-to-path routine in DC1. Write order follows `ixion/docs/DESIGN.md` 4.6, and every host
+sub-root, which satisfies "Ixion never writes to the native save slots" (`docs/DESIGN.md` 3.6)
+without a save-to-path routine in DC1. Write order follows `docs/DESIGN.md` 4.6, and every host
 write uses an atomic replace (the pattern of `kazarov:include/platform/files.hpp` `FilesWrite`). Known
 side effect: DC2's soundtrack folder is derived from the save root's parent
 (`research/c2-platform-io.md`), so the bundle layout must give each module its own parent.
 
 ### 2.5 L4: content crossover
 
-Content crossover is one-way, offline and native: a converter in `ixion/tools/` reads one game's
+Content crossover is one-way, offline and native: a converter in `tools/` reads one game's
 extracted data and writes the other game's formats into a local overlay folder outside the
 repository, which the destination engine reads with its own loader. No game data or converted asset
 is committed.
@@ -497,8 +497,8 @@ without a C++ build of either game.
 
 ### IX-01 ABI v2 header and passenger record
 
-- Files: `ixion/include/ixion_api.h`, `ixion/include/ixion_passenger.h` (new),
-  `ixion/include/abi_check.c` (new).
+- Files: `include/ixion_api.h`, `include/ixion_passenger.h` (new),
+  `include/abi_check.c` (new).
 - Work: append `travel`, `travel_status`, `stations`, `passenger_request` and `passenger_result` to
   `IxionApi`; define `IxionTravelStatus`, `IxionStation` and the reconciled `IxionPassengerV1`
   (section 2.4); document the mailbox rule; bump the version and state the size-gated compatibility
@@ -508,7 +508,7 @@ without a C++ build of either game.
 
 ### IX-02 Station catalogue and checker
 
-- Files: `ixion/data/stations.tsv` (new), `ixion/tools/stations_check.py` (new).
+- Files: `data/stations.tsv` (new), `tools/stations_check.py` (new).
 - Work: one row per station from the tables in `research/v1-c1-runtime-warp.md` (5 towns, loadable
   sub-maps, 7 dungeons, 16 world-map places) and `research/v1-c2-runtime-warp.md` (tier A towns, 7
   dungeons with floor records and rooms), with game, kind, native map, floor, jump string, reached-flag
@@ -519,9 +519,9 @@ without a C++ build of either game.
 
 ### IX-03 Translation table and crosswalk seeds
 
-- Files: `ixion/data/translate.tsv`, `ixion/data/weapon_classes.tsv`,
-  `ixion/data/items_crosswalk.tsv`, `ixion/tools/translate_check.py` (all new).
-- Work: rows in the `ixion/docs/DESIGN.md` 4.5 schema for every `IxionPassengerV1` field in both
+- Files: `data/translate.tsv`, `data/weapon_classes.tsv`,
+  `data/items_crosswalk.tsv`, `tools/translate_check.py` (all new).
+- Work: rows in the `docs/DESIGN.md` 4.5 schema for every `IxionPassengerV1` field in both
   directions; weapon class map from `research/crosswalk-characters.md`; item seeds keyed
   `world:native_id` with EQUIV, ANALOG, CLASS or NONE (`research/crosswalk-items-world.md`).
 - Verify: the checker validates enums, that every passenger field has exactly one row per direction,
@@ -529,8 +529,8 @@ without a C++ build of either game.
 
 ### IX-04 Paper manifest dry run
 
-- Files: `ixion/tools/saves/dc1_save.py`, `ixion/tools/saves/dc2_save.py`,
-  `ixion/tools/manifest_dry_run.py` (all new).
+- Files: `tools/saves/dc1_save.py`, `tools/saves/dc2_save.py`,
+  `tools/manifest_dry_run.py` (all new).
 - Work: read-only parsers for the passenger fields (DC1 image 0x136A7 bytes with version string and
   1,223 block sums, `research/c1-save.md`; DC2 only for fields whose offsets the research confirms,
   `research/c2-save.md`), then apply `translate.tsv` and print the manifest.
@@ -539,17 +539,17 @@ without a C++ build of either game.
 
 ### IX-05 Bundle format specification
 
-- Files: `ixion/docs/BUNDLE.md` (new).
+- Files: `docs/BUNDLE.md` (new).
 - Work: folder layout (`dc1/`, `dc2/`, `ixion.json`), manifest and ledger schema, pending-crossing
-  record, generation counters, write order (`ixion/docs/DESIGN.md` 4.6), partial-bundle behaviour, and
+  record, generation counters, write order (`docs/DESIGN.md` 4.6), partial-bundle behaviour, and
   the soundtrack parent-folder rule.
-- Verify: review against `ixion/docs/DESIGN.md` 3.6 and 4.6 and against each port's save-root use
+- Verify: review against `docs/DESIGN.md` 3.6 and 4.6 and against each port's save-root use
   (`research/c1-platform-io.md`, `research/c2-platform-io.md`); every file a module writes under its
   save root is listed.
 
 ### IX-06 Module and staging checker
 
-- Files: `ixion/tools/check_modules.py` (new), `ixion/host/build-windows.ps1`.
+- Files: `tools/check_modules.py` (new), `host/build-windows.ps1`.
 - Work: fail unless each module exports only `ixion_get_api` and every import of the host and both
   modules resolves to a staged DLL; stage `vulkan-1.dll` and DC2's FFmpeg DLLs, and pick one
   `libunwind.dll` (`research/v1-board-window.md`, staging table).
@@ -558,7 +558,7 @@ without a C++ build of either game.
 
 ### IX-07 Portrait candidate survey
 
-- Files: `ixion/tools/portraits.py` (new).
+- Files: `tools/portraits.py` (new).
 - Work: list DC2 catalog PNG keys for each playable character and DC1 menu images, decode them into a
   contact sheet in a local output folder outside the repository.
 - Verify: the sheet exists and names, for Max, Monica and Toan, at least one image a reviewer reads as
@@ -567,7 +567,7 @@ without a C++ build of either game.
 
 ### IX-08 DC1 town and collision dumper
 
-- Files: `ixion/tools/dc1_scn.py` (new).
+- Files: `tools/dc1_scn.py` (new).
 - Work: Python reader for `scene.scn` PTS entries (`chronicle:ps2/src/dispctrl.cpp:19-38`) and for
   `MDT_COLLISION` sets (`chronicle:ps2/include/mdt.hpp:38-56`); print parts, triangle counts and a
   histogram of info indices and area kinds for one town.
@@ -576,7 +576,7 @@ without a C++ build of either game.
 
 ### IX-09 Motion and bone inspector
 
-- Files: `ixion/tools/chr_inspect.py` (new).
+- Files: `tools/chr_inspect.py` (new).
 - Work: walk a `.chr` pack, list MDS bones and mesh owners, and print DC1 `base.cfg` KEY rows or DC2
   `info.cfg` named keys; emit the locomotion key map.
 - Verify: on Toan's and Max's packs the output reproduces the counts in
@@ -584,8 +584,8 @@ without a C++ build of either game.
 
 ### IX-10 Ledger library with round-trip tests
 
-- Files: `ixion/host/ledger.hpp`, `ixion/host/ledger.cpp`, `ixion/host/tests/ledger_test.cpp` (new),
-  `ixion/host/CMakeLists.txt`.
+- Files: `host/ledger.hpp`, `host/ledger.cpp`, `host/tests/ledger_test.cpp` (new),
+  `host/CMakeLists.txt`.
 - Work: load `translate.tsv`, translate depart and return, keep the shadow record, apply write-back.
   No SDL and no game headers.
 - Verify: the host test binary passes origin-to-destination-to-origin cases that restore shadow fields
@@ -594,7 +594,7 @@ without a C++ build of either game.
 
 ### IX-11 Host routing and resume hygiene
 
-- Files: `ixion/host/host.cpp`.
+- Files: `host/host.cpp`.
 - Work: the routing order of `research/v1-board-window.md` section 4; drop unknown window ids; clear a
   game's queued keyboard and button events on resume; refuse F10 while a passenger is abroad.
 - Verify: `--auto-switch 120:20` still exits 0 with the existing modules; a scripted key held across a
@@ -602,8 +602,8 @@ without a C++ build of either game.
 
 ### IX-12 Board window
 
-- Files: `ixion/host/board.hpp`, `ixion/host/board.cpp` (new), `ixion/host/host.cpp`,
-  `ixion/host/CMakeLists.txt`.
+- Files: `host/board.hpp`, `host/board.cpp` (new), `host/host.cpp`,
+  `host/CMakeLists.txt`.
 - Work: the SDL_Renderer board from `research/v1-board-window.md`, reading stations from
   `stations.tsv` until modules export them.
 - Verify: F9 toggles the board, closing it does not quit, receipts update at each switch, and both
@@ -669,8 +669,8 @@ without a C++ build of either game.
 
 ### IX-19 Host travel controller
 
-- Files: `ixion/host/travel.hpp`, `ixion/host/travel.cpp` (new), `ixion/host/host.cpp`,
-  `ixion/host/main.cpp`.
+- Files: `host/travel.hpp`, `host/travel.cpp` (new), `host/host.cpp`,
+  `host/main.cpp`.
 - Work: the Decide, Manifest, Depart, Arrive, Return and Rollback sequence of section 2.3, with
   `--auto-travel` as the acceptance mode.
 - Verify: `--auto-travel` crosses Norune to Palm Brinks and back five times, each arrival receipt
@@ -711,5 +711,5 @@ without a C++ build of either game.
 | 12 | Does the DC1 texture decoder take direct-colour TIM2 for a converted texture? | Replace one entry in a copy of Toan's IMG with a direct-colour TIM2 and run one headless dungeon frame |
 | 13 | Is the hub better as DC2's train maps or as the host board alone? | `--jump town:<n>` into the Ixion Operations Room (`s39`) and the train cars (`s36` to `s38`) at the debug progress, with screenshots |
 | 14 | Should the Kazarov embedded mode go upstream, and should Chronicle move to the current layout? | Configure Chronicle against current Kazarov in a scratch tree and count the edits `research/kz-build-data.md` predicts |
-| 15 | What does a Linux host need? | Port `ixion/host/fiber_smoke.cpp` to `ucontext` on Linux and check resume order and floating-point control state, before touching the scheduler adoption |
+| 15 | What does a Linux host need? | Port `host/fiber_smoke.cpp` to `ucontext` on Linux and check resume order and floating-point control state, before touching the scheduler adoption |
 | 16 | Are the DC2 save offsets past `edit_data` right? | An `offsetof` probe in the DC2 test binary for the fields `research/c2-save.md` lists, compared with the note |

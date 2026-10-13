@@ -133,7 +133,7 @@ These are proposals for a new file, `port/src/ixion_passenger.cpp` in the DC2 po
 ### Shared record (plain C, fixed width)
 
 ```c
-/* ixion/include/ixion_passenger.h (new). Plain C; both modules and the host include it. */
+/* include/ixion_passenger.h (new). Plain C; both modules and the host include it. */
 #define IXION_PASSENGER_VERSION        1u
 #define IXION_PASSENGER_MAX_ITEMS      16u
 #define IXION_PASSENGER_WEAPON_SLOTS   2u   /* kind 0 melee, kind 1 sub: CHARA_EQUIP_SLOT */
