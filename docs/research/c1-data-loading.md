@@ -1,0 +1,155 @@
+# Chronicle (DC1): data loading and the DC1 data tree
+
+## What this covers
+
+How the Chronicle PC port finds, indexes and reads game files: the data root and save root, the disc index and its lookup, pack files, the per-language message and text overrides (`localize*`), the extractor (`tools/dcdata`), and how the character and cloth loaders consume packs. It also lists the top-level folders of an extracted DC1 tree and what each holds, and compares the loader with ChronicleTwo's, because the Ixion question is how DC1 code could read a DC2 file.
+
+Versions read: chronicle master `3bc16763` (port pinned to Kazarov `a0a5ff8`); Kazarov `main` `9310c53` for the newer path layer; chronicletwo `master` `f44a756`. The data tree is the PAL July 12 2001 prototype extracted with dcdata. The extracted tree is not in any repository; its statistics below come from parsing its `data.hd2` index and listing the files on disk.
+
+## Key facts
+
+- The port compiles the game's units from `ps2/src` with clang, after stripping every definition that a `PORT_OVERRIDE` tag in `port/src` replaces. Stripping is done per unit by Kazarov's `port_override.py` (`chronicle:port/CMakeLists.txt:58-88`). About 345 lines in 63 port files mention the tag, most of them definitions (`grep -c PORT_OVERRIDE` over `port/src/*.cpp`; a count, not an audit).
+- `port/src/dataread.cpp` overrides the disc-reading API: `InitCDFile` (118), `LoadFile` (155), `LoadFile2` (164), `LoadFileBG` (229), `GetReadBGFile` (269), `ReadBG` (276, a no-op), `ReadBGSync` (279), `InitReadBG` (213), `StartReadBG` (219), `BreakReadBG` (223), `WriteFile` (290) and the three-argument `GetPackFile` (314). `LoadPackFile`, the index form `GetPackFile(pack, index, ...)` and `GetPackFileExt` are still the PS2 code (`chronicle:ps2/src/dataread.cpp:684-825`).
+- Data root resolution is in Kazarov's `PathsDataRoot()`: `--data`, then the environment variable named by `PathsConfig.env_data` (`DC_DATA` for Chronicle), then `./data`, then `data/` beside the executable, then the per-user install directory (`kazarov:src/cpp/platform/paths.cpp:198-208`, `Local` at 50, `Installed` at 66). The pinned copy has the same order without the newer flags (`kazarov@a0a5ff8:port/platform/paths.cpp:188`).
+- Chronicle sets its identity once at startup: `app_dir = "chronicle"`, `env_data = "DC_DATA"`, `env_save = "DC_SAVE"`, environment prefix `DC` (`chronicle:port/src/identity.cpp:8-11`). Startup order is `GameSetIdentity`, then `PathsConsumeArgs`, then `FirstRunIfNoData`, in `Run` (`chronicle:port/src/main.cpp:367-372`).
+- The index is a directory walk. `InitCDFile` recursively registers every regular file under the data root under its folded relative path, then overlays `data/normalized/` on top (`chronicle:port/src/dataread.cpp:118-153`). Keys come from `dcdata::FoldPath`, which lowercases ASCII, turns `\` into `/` and, on macOS and Windows only, encodes bytes above 0x7F as lowercase `%xx` (`chronicle:tools/dcdata/dcdata.hpp:51-69`).
+- Lookup is one hash map access. `Lookup` strips everything up to the first colon (so `host:`, `cdrom0:` and any other device prefix are dropped), folds the key and returns the file (`chronicle:port/src/dataread.cpp:32-35, 66-72`). Every port read path goes through it, including `LoadFile2`, `LoadFileBG` and `DataLanguages`.
+- Reads are whole-file and synchronous. `ReadWhole` zero-fills the tail of the last sector because callers size buffers in whole sectors (`chronicle:port/src/dataread.cpp:74-92`). A file that is in the index but unreadable aborts the process; a file that is not in the index makes `LoadFile2` return 0, and `LoadFile` then asserts (`chronicle:port/src/dataread.cpp:76-83, 155-178`).
+- Message files are rewritten on load. `Localized()` runs on every file `LoadFile2` and `LoadFileBG` return: it calls `LocalizeLoaded` (records the pack a buffer came from) and `LocalizeFile`, which only does work for `.mes` names (`chronicle:port/src/dataread.cpp:108-114`). Message entries inside a pack go through `LocalizePack` in the three-argument `GetPackFile` (`chronicle:port/src/dataread.cpp:314-335`).
+- Languages come from `languages.json` at the data root, which dcdata writes. `RunGame` sets `LanguageCode` from it: one language skips the select, and an empty list prints "the data has no languages.json; run dcdata extract again" (`chronicle:port/src/gameloop.cpp:798-810`, `chronicle:port/src/dataread.cpp:182-211`).
+- The extracted tree used here lacks `languages.json` and `normalized/`. Its `data.hd2` is 312,864 bytes with FNV-1a 64 `0x5942a32563c2a8b1`, which matches dcdata's PAL prototype entry (`chronicle:tools/dcdata/dcdata.hpp:717-723`). So it is the PAL prototype extracted by an older dcdata. PC.md says data extracted before `languages.json` starts at the select with a note to extract again (`chronicle:docs/PC.md:71-72`).
+- The index holds 5,426 slots, of which 5,425 are named records. One title pack, `titledat/title_s.pak`, is listed twice; dcdata and the game keep only the first (`chronicle:tools/dcdata/dcdata.hpp:389-403`). The index names agree with the files on disk apart from non-ASCII names, which are stored as `%xx` on disk, and `data.hd2` itself, which is the copied index.
+- The character loader reads a `.chr` as a pack. Its member `info.cfg` is a small command script; each command pulls a named member (MDS model, motion, cloth, IMG texture) out of the same pack with `GetPackFile` (`chronicle:ps2/src/chararead.cpp:135-211, 221-265, 489-508`). The command table has 19 entries (`chronicle:ps2/src/chararead.cpp:92-112`).
+- Cloth definitions are text. `CLOTH "poncho1.clo"` in `info.cfg` looks up a member of the same `.chr` pack (`chronicle:ps2/src/chararead.cpp:445-457`). The loose `dun/cloth/*.clo` files are the same text, but no code path loads them by path (`grep` of `ps2/src` finds no reference to `dun/cloth` or `.clo` paths).
+- The port's `chararead.cpp` and `clothread.cpp` are not loaders. `port/src/chararead.cpp` supplies C versions of `StretchBind2` and `vuabs` that the PS2 units leave out under `#ifndef PORT` (`chronicle:ps2/src/chararead.cpp:793`); `port/src/clothread.cpp:11` overrides `MoveImageTest`, the VU GS transfer.
+- Language-specific files are chosen by name suffix or folder, not by a lookup table: `teximg2_%d.pac`, `mes_tex_%d.pak`, `esys_%d.pak`, `sys_%d.img`, `img_%d/memory.img`, `dun/img/<prefix>/` and `commenu/a_<lang>/` (`chronicle:ps2/src/dun/gameloop.cpp:1258-1305`, `chronicle:ps2/src/editloop.cpp:4435-4455`, `chronicle:ps2/src/nowload.cpp:104-106`, `chronicle:ps2/src/main.cpp:1331`, `chronicle:ps2/src/dngmessageman.cpp:9`, `chronicle:ps2/src/menu_draw.cpp:57-75`).
+- Port-owned text is a second overlay. `LocalizeText` returns the current language's JSON value for a key, else the English passed in; `LocalizeFindFile` finds fonts and textures in the save folder's `lang/` before the executable's (`chronicle:port/src/localize.cpp:630-687`, `chronicle:port/src/localize_texture.cpp:136-144`). Shipped translations sit in `port/lang/` (`de_de.json`, `es_es.json`, `fr_fr.json`, `it_it.json`; `chronicle:port/CMakeLists.txt:234-244`).
+- Extraction is `dcdata extract <iso-or-directory> <out>`. It copies every reachable record (first case-folded path wins), writes `data.hd2`, runs `Normalize`, writes `languages.json`, and reports missing or wrong-sized files (`chronicle:tools/dcdata/main.cpp:36-58`, `chronicle:tools/dcdata/dcdata.hpp:1055-1140`).
+- `Normalize` does different work by disc layout. `NormalizeIconSheets` runs for every disc and writes the commenu item sheets that share the HUD palette into `normalized/` (`chronicle:tools/dcdata/dcdata.hpp:595-600`). For the PAL disc, `Normalize` then returns at `dcdata.hpp:840` (the early return, after the layout test at 838, is for non-NTSC layouts), so the NTSC-only steps are skipped: the localized aliases, the system-pack split, the `start_`/`pause_` picture aliases and the battle-menu sheet move (`chronicle:tools/dcdata/dcdata.hpp:832-974`). `FillFloorPlates` runs for releases flagged `blank_floor_plates`, which the PAL prototype is (`chronicle:tools/dcdata/dcdata.hpp:720, 1121-1123`), and writes its result to `normalized/` as well (`chronicle:tools/dcdata/dcdata.hpp:975`; `chronicle:docs/PC.md:47-58`).
+- The save root is separate: `PathsSaveRoot` defaults to `save/`, beside a local `data/` if there is one, else the per-user directory; `WriteFile` writes under `save/host0/` (`chronicle:port/src/dataread.cpp:290-310`, `kazarov:src/cpp/platform/paths.cpp:211-231`).
+
+## How it works
+
+### 1. Roots and identity
+
+The game names itself once, through `GameSetIdentity()`. That call configures the shared host's path layer and environment prefix for the whole process (`chronicle:port/src/identity.cpp:8-15`). `PathsConsumeArgs` removes `--data DIR`, `--data=DIR`, `--save` and the same forms from `argv` (`kazarov@a0a5ff8:port/platform/paths.cpp`, `PathsConsumeArgs`). `PathsDataRoot()` resolves the root once and caches it. `PathsSetDataRoot` replaces the root and clears the cache, which is how the tests point the loader at synthetic trees (`chronicle:port/src/tests/data_read_test.cpp:41, 149`).
+
+The newer Kazarov layer adds two things the pinned copy does not have: `PathsConfig.coherent_default_root` (per-user `data/` and `saves/` under one app root, used by ChronicleTwo) and a `--run-dir DIR` flag that sets both roots at once (`kazarov:include/platform/paths.hpp:24-30`, `kazarov:src/cpp/platform/paths.cpp:149-151`). Chronicle does not set either flag.
+
+### 2. The index
+
+`InitCDFile` runs lazily on the first lookup, or explicitly from `RunGame` (`chronicle:port/src/gameloop.cpp:798`). If the root is missing or empty, `main` has already exited with status 3 and a one-line message (`chronicle:port/src/main.cpp:163-189`); `InitCDFile` aborts the same way if it is reached anyway (`chronicle:port/src/dataread.cpp:37-43`). It also warns if `data.hd2` lists files that are missing or the wrong size (`chronicle:port/src/dataread.cpp:45-64, 118-153`). The index is a hash map from folded relative path to on-disk path, so a lookup costs one hash. The walk itself costs one directory iteration over every file at startup.
+
+The port's index differs from the PS2 code in one way that matters: the PS2 build reads `DATA.HD2` and seeks inside `DATA.DAT` by sector, while the port reads the files that dcdata has already extracted, so `DATA.DAT` is never opened at run time. The port does not use the sector fields of `data.hd2`; dcdata uses them to copy each file out of `DATA.DAT` (`chronicle:tools/dcdata/dcdata.hpp:308-353, 1055-1080`).
+
+### 3. Reading a file
+
+For `LoadFile2(path, buffer, size, mode)` the port does: strip the device, look up the folded key, `ReadWhole` into the buffer (zero the tail to the sector boundary), `LocalizeLoaded` and `LocalizeFile`, then return the possibly rewritten size. `mode` is ignored (`chronicle:port/src/dataread.cpp:164-178`). `LoadFileBG` does the same work at once and marks the slot complete, so `ReadBGSync` reports nothing pending for it; `ReadBG` does nothing (`chronicle:port/src/dataread.cpp:229-286`).
+
+### 4. Packs
+
+A pack is a flat table of 76-byte entries: a 64-byte NUL-terminated name, then offset, size and next-entry offset, each relative to the entry itself. A zero first byte ends the table (`chronicle:ps2/src/dataread.cpp:40-48`). `LoadPackFile` reads the pack like any file and makes it the "current" pack. The three-argument `GetPackFile(pack, name, size)` takes the last path component of `name` and scans the table; the port version also substitutes localized message entries (`chronicle:port/src/dataread.cpp:314-335`, `chronicle:port/src/localize.cpp:580-628`). Dcdata reads and writes the same format (`chronicle:tools/dcdata/dcdata.hpp:453-509`).
+
+Packs nest. A `.chr` is a pack, and `GetPackFile(read_buffer, "ceffe_s.chr", NULL)` reads a `.chr` out of a pack that is already in `read_buffer` (`chronicle:ps2/src/dun/gameloop.cpp:7050`).
+
+### 5. Messages and text
+
+`LocalizeMessageKey` turns a load path into the key a JSON file uses: the path with the language folder and `.mes` removed, slashes turned to dots (`dun/script/d01/d01_3.mes` is `dun.script.d01.d01`). `LoadLanguage` reads `<lang>.json` from the executable's `lang/` and then the save folder's `lang/`; `Table` then applies every `patches/*.json` (`chronicle:port/src/localize.cpp:67-151, 243-266`). `LocalizeFile` decodes the retail message words, lays the JSON texts over them, re-encodes, and refuses to write more bytes than the caller's buffer holds, keeping retail text in that case (`chronicle:port/src/localize.cpp:543-578`). A message that does not fit or uses a character the font lacks is reported once, not per frame (`Report`, `chronicle:port/src/localize.cpp:50-55`).
+
+`LocalizeApplyPendingLanguage` is called where a new area is about to load; it changes `LanguageCode` and reloads the system messages (`chronicle:port/src/localize.hpp:123-126`, `chronicle:port/src/localize.cpp:713-722`).
+
+`LocalizeExport` is the reverse: it walks the whole data root, decodes every `.mes` and every message entry in every `.pak`/`.pac`, and writes one flat JSON per language plus per-message hashes (`chronicle:port/src/localize.cpp:792-934`). The first start writes `save/lang-export/` for translators (`chronicle:port/src/main.cpp:393-403`).
+
+### 6. Characters
+
+The party and villager models are loaded as `.chr` files by name. In dungeons, the six party characters come from a fixed table `dun/mainchara/c01d.chr` and similar (`chronicle:ps2/src/btitem.cpp:56-60`, loaded at 95). In the town editor, `EdLoadMainChara("chara/c01d.chr", "info.cfg", ...)` loads the hero (`chronicle:ps2/src/editloop.cpp:1003, 4757-4765`), and villagers load `chara/<name>.chr` (`chronicle:ps2/src/editloop3.cpp:1000, 1064`).
+
+Once the pack is in memory, `CCharacter::LoadPackData2` calls `ReadInfo` (`chronicle:ps2/src/character.cpp:1015-1025`). `ReadInfo` finds `info.cfg` in the pack, runs its preprocessor (line comments and block comments become spaces), and dispatches each command to a handler that allocates from one of the caller's arenas and fetches its member with `GetPackFile` (`chronicle:ps2/src/chararead.cpp:135-211, 746-783`). A word that is not in the 19-command table is returned as command 20, which the dispatch loop ignores, so unknown commands are skipped word by word rather than stopping the parse (`chronicle:ps2/src/chararead.cpp:665-697`).
+
+### 7. Background menu loads
+
+Menu loads prepend `commenu/` and the language folder: `LoadFileBGMenuData` builds `commenu/a_<lang>/<name>` from `LanguageCode` and calls `LoadFileBG` (`chronicle:ps2/src/menu_draw.cpp:57-103`). Title and intro screens load `titledat/title.pak` and `rmdat/rmdat1.pak` directly by name (`chronicle:ps2/src/title/titleloop.cpp:287`, `chronicle:ps2/src/title/title.cpp:244`, `chronicle:ps2/src/title/rushmovi.cpp:389`).
+
+### 8. The DC1 data tree
+
+Index statistics (5,425 named records; sizes are record bytes, rounded to MiB):
+
+| Folder | Records | MiB | What it holds |
+|---|---|---|---|
+| `gedit/` | 2181 | 835.0 | Area ground data. `e01`-`e05` and `s01`-`s99` area folders (talk messages `*talk_N.mes`, `mapinfo.cfg`), `interior/`, and `system/` (`esys.pak`, `esys_cmn.pak`, `sys_N.img`, `event.stb`). Read by the town editor and the area loader (`ps2/src/editloop.cpp:741, 783-784, 4447-4455`, `ps2/src/editloop.cpp:361`). The folder name is the editor's "EditDataDir" (`ps2/src/editloop.cpp:741`); the area role is inference from that and from the DCFM notes. |
+| `commenu/` | 821 | 360.1 | Common menu packs and icons: `a1.pak`-`a6.pak`, per-language sets `a_jpn/`, `a_usa/`, `a_eng/`, `a_fre/`, `a_ger/`, `a_ita/`, `a_spa/`, `dungeon/`, `weapon/` (`c01w00.chr` etc.), `wepicon.img`, `itemicon.img`, `shopchara/`, `map/`, `manual/`, `openbook.pak`, `option.pac`, `quickchr.pac` (`ps2/src/menu_draw.cpp:57-75`, `ps2/src/btitem.cpp:103-115`, `ps2/src/battle_globals.cpp:3354`). dcdata writes normalized copies of each language's `itempack.img` into `normalized/` (`tools/dcdata/dcdata.hpp:595-600`). |
+| `dun/` | 1403 | 248.3 | Dungeon data. `d01`-`d07` (per-dungeon `anime/`, `effect/`, `event/`, `stair_mos/`), `script/d01`-`d07` (event scripts with `dNN_N.mes` messages), `dNN*.cfg` configs, `mainchara/` (party `.chr` files and `wep_eff/`), `monstor/` (357 monster `.chr`/`.stb` files), `item/` (`main_data`, `main_wep`), `pack/` (`maindat.pac`, per-language `teximg2_N.pac`), `img/<prefix>/` (dungeon images per language: `jp`, `us`, `us_e`, `fr`, `gr`, `it`, `sp`), `mpd_pack/` (`dNN*.mpd`), `ex/` (`.chr` variants, not traced), `cloth/` (`.clo` text), `evnt_btl/`, `effect/`, `etc/`, `menu/`, `message/` (`ww_mes`, `old_data`) (`ps2/src/dngmessageman.cpp:9`, `ps2/src/hitvalue.cpp:33-34`, `ps2/src/shot_freefuncs.cpp:1310`). |
+| `sound/` | 259 | 103.9 | Sound banks: `bgm/bgmN.snd` (57), `set/` (62), `special/` (62), `battle/` (39), `sound_set/` (29), `voice/` (7), and `tbl/` (`setbl.txt`, `sqtbl.txt`, 3 files) (`ps2/src/snd.cpp:472-473, 848, 1382, 1488`, `ps2/src/main.cpp:393-394`). The `battle/` path was not traced. |
+| `opdat/` | 301 | 77.3 | The opening (prologue) sequence: `opening.scr`, `opening.pal`, `optext_0`-`6.mes`, and `chara/`, `scene/`, `usa/` (`fconv.bin`), plus area packs `norn/`, `norn2/`-`norn4/`, `toan/`, `dungeon/` and `sikatest/` (`ps2/src/title/opening.cpp:210-269` loads only the script, palette and text files). The roles of the sub-folders are inference. |
+| `rmdat/` | 20 | 39.9 | Title-sequence movie packs: `rmdat.scr` and `rmdat1.pak`-`rmdat9.pak` with `.cfg` files (`ps2/src/title/rushmovi.cpp:389`, `ps2/src/title/title.cpp:244-248`). |
+| `titledat/` | 8 records (7 files) | 30.8 | Title screen: `title.pak`, `title_eu.pak`, `title_f.pak`, `title_g.pak`, `title_i.pak`, `title_s.pak` (listed twice in the index), and `lang_set.img` for the language select (`ps2/src/title/titleloop.cpp:287-290`, `ps2/src/langset.cpp:35`). The per-language `title_*.pak` files are on the disc; dcdata's aliases for them apply only to NTSC layouts (`chronicle:tools/dcdata/dcdata.hpp:838-870`). |
+| `chara/` | 25 | 6.7 | Standalone character packs for the town editor and fishing: `c01d.chr` and variants, `f00s.chr` and `f01a`-`f18a` fish models (`ps2/src/fish.cpp:457-496`), town villagers. |
+| `img/` | 46 | 5.2 | UI and loading images, the Japanese set. `nowload` and the memory card screen use `img/` for language 0 (`ps2/src/nowload.cpp:104-106`, `ps2/src/main.cpp:1331`). Includes `mt01`-`mt51` loading art, `memory.img`, `ankfont.img`, `pause.img`, `eventmnu.pak`, `nameregi.pak`. |
+| `img_1/` ... `img_6/` | 45 each | 4.6-5.0 each | The same file names for languages 1 to 6, with translated images. `memory.img` differs between `img/` and `img_2/` (checked by hash). |
+| `meswin/` | 60 | 2.8 | Window message files and fonts: `system_N.mes` and `system14_N.mes` per language, `mes_tex.pak` and `mes_tex_N.pak`, `fconv.bin`, `fontcell.bin`, `master_system*.bin`, shared `gaiji.img`, `fuki256.img`, `syst04.img` (`ps2/src/dun/gameloop.cpp:919-921, 1302-1305`, `ps2/src/editloop.cpp:1069-1079`). |
+| `check/` | 10 | 0.9 | A small image set loaded by dungeon code (`ps2/src/dun/gameloop.cpp:914, 931`), with an `old/` copy folder. Its purpose is inference. |
+| `noda_w/` | 14 | 0.5 | English dungeon message copies (`dun00_eng*.mes`), conversion scratch (`convbuff.txt`, `fconvtest.bin`) and a Windows shortcut. No reference in `ps2/src`; treated as a development leftover (inference). |
+| data root | 7 | 0.2 | `data.hd2` (a copy of the index), `data.hd2_`, `gdata0.edt` (ground editor data; read by name, `ps2/src/editground.cpp:1621`), `gdata_e3.edt_`, `test.stb`, `test4.stb`, `tmp.txt`, `mapeditor.ini`. The last two and `test*.stb` are disc records; their use was not traced beyond `gdata0.edt`. |
+
+The tree has no `DATA.DAT` (the disc's archive) and no `languages.json` or `normalized/` (see Key facts).
+
+### 9. Comparison with ChronicleTwo
+
+The ChronicleTwo port uses the same overall shape with a different implementation. Its `DataReadIndex(root)` builds the index from the same kind of directory walk, keys are lowercase with non-ASCII bytes always `%xx` (`chronicletwo:port/src/dataread.cpp:90-130, 289-331, 336-346`). Its catalog and overlay (`port_data/catalog.json`, `datapacks::Load`) and save-tree shadowing for `host:` names are extra layers Chronicle does not have (`chronicletwo:port/src/dataread.cpp:205-246`, `chronicletwo:port/src/platform/datapacks.hpp:1-47`). It has no localization layer (`localize.cpp` and `languages.json` are not in its tree). Its extractor is the Kazarov Rust library behind `dc2data` (`chronicletwo:tools/dc2data/main.cpp:30-34`, `kazarov:src/rust/core.rs:192`).
+
+Its identity is `app_dir = "chronicletwo"`, `env_data = "DC2_DATA"`, `env_save = "DC2_SAVE"`, with `installed_save_default` and `coherent_default_root` set (`chronicletwo:port/src/identity.cpp:7-12`).
+
+The extracted DC2 tree (about 10,600 files on disk) has different top-level folders: `chara`, `dbg`, `dungeon`, `effect`, `etc`, `event`, `item`, `mainchr`, `map`, `menu`, `meswin`, `movie`, `sg`, `snd2`, `sound`, `title`, `wep_t`, plus `.cfg` files and `manifest.json`. Only `chara`, `meswin` and `sound` share a top-level name with the DC1 tree. Seven relative paths are identical in both trees: `meswin/system_1.mes` through `meswin/system_6.mes` and `test.stb`. In the one DC2 character pack examined (`chara/c01_base.chr`), the first member is a `.clo` file, and its `info.cfg` uses a different command vocabulary (`FRAME_START`, `VERTEX_L`, `MODEL "c01b.mds";`), which is not the 19-command table in `chronicle:ps2/src/chararead.cpp:92-112`.
+
+The DC2 header lists `PACK_ENTRY` as 0x4C bytes (`chronicletwo:ps2/include/dataread.hpp:126-134`), the same 76-byte entry as Chronicle's `PACK_ENTRY` (`chronicle:ps2/src/dataread.cpp:43-48`), so the pack container is probably the same. That has not been tested against a real DC2 `.pak`.
+
+## Ixion hooks
+
+1. **Second data root.** `chronicle:port/src/identity.cpp:8-15` sets the only path configuration for the process, and `PathsDataRoot()` caches one root. An Ixion build would add a second accessor, for example reading `IXION_DC2_DATA` or `--data2` and returning a separate path, alongside `PathsDataRoot()`, without changing the Kazarov singleton. This needs no change to any game unit.
+
+2. **Second index inside the DC1 loader.** `chronicle:port/src/dataread.cpp:66-72` (`Lookup`) is the single point all port reads pass through, including `LoadFile2` (164), `LoadFileBG` (229) and `DataLanguages` (182). `InitCDFile` (118) could build a second `data_index` from the DC2 root, and `Lookup` could consult it when the primary misses. This gives DC1 code the ability to open DC2 names with no call-site change, but DC1's own index wins for the seven shared paths above, so DC2's `meswin/system_1..6.mes` and `test.stb` would be shadowed unless the second index is consulted first for DC2-originated calls.
+
+3. **Scoped lookups.** A global "which game is loading" value, set where an area is about to load (the same place `LocalizeApplyPendingLanguage` is called, `chronicle:port/src/localize.hpp:123-126`), would pick the index. This is the natural fit for a time-travel crossing: the destination area decides which tree its files come from. Inference: this requires the lookups made by a unit to be attributed to the unit's game, which is not true today for any shared name.
+
+4. **Device-style prefix.** `StripDevice` (`chronicle:port/src/dataread.cpp:32-35`) drops everything before the first colon. It could be changed to return the prefix, so that a name such as `dc2:chara/c01_base.chr` routes to the second index. The prefixed names in `ps2/src` are `host0:` writes (`chronicle:ps2/src/editground.cpp:1606`, `chronicle:ps2/src/edit.cpp:154`) and PS2 `cdrom0:` opens (`chronicle:ps2/src/dataread.cpp:492, 540`, `chronicle:ps2/src/main.cpp:292-323`); the port drops all of them. Call sites in DC2 units would need the prefix added; they are literal strings.
+
+5. **Pack reads.** `GetPackFile` (`chronicle:port/src/dataread.cpp:314-335`) already has the 76-byte entry layout. Ixion could read a DC2 `.pak` or `.pac` through the same walker once a root is chosen, which would be cheaper than a new container parser, if the DC2 pack layout is confirmed.
+
+6. **Character config.** `CCharacter::LoadPackData2` (`chronicle:ps2/src/character.cpp:1023`) and `ReadInfo` (`chronicle:ps2/src/chararead.cpp:135`) are where a DC2 `.chr` would enter. A DC2 `info.cfg` would be read as a series of unknown words under the 19-command table, so no model command would run and the character would load with no models (inference from the dispatch loop, not tested). Options: a second command table keyed by source game, or converting DC2 `info.cfg` into the DC1 dialect at load time (feasibility not assessed).
+
+7. **Language and image folders.** Per-language folders are chosen from `LanguageCode` in several places (`chronicle:ps2/src/nowload.cpp:104-106`, `chronicle:ps2/src/main.cpp:1331`, `chronicle:ps2/src/menu_draw.cpp:57-75`, `chronicle:ps2/src/dngmessageman.cpp:9`). A merged build would need a per-game image folder choice at each. `chronicle:port/src/gameloop.cpp:798-810` sets `LanguageCode` from DC1's `languages.json` only.
+
+8. **Port text and fonts.** `LocalizeFindFile` and `LocalizeText` search `lang/` beside the executable and in the save folder (`chronicle:port/src/localize.cpp:67-79, 670-687`). A per-game `lang/` directory would be an extension point for Ixion's own strings, without touching the DC1 or DC2 JSON.
+
+9. **Test fixture.** `chronicle:port/src/tests/data_read_test.cpp:40-41, 149` builds a synthetic ISO, extracts it with `dcdata::Extract`, and points `PathsSetDataRoot` at it. A second fixture for a DC2 tree would test the second index without either real disc.
+
+## Risks and blockers
+
+- **Singletons.** `PathsConfigure` (one identity), the data root cache, `dataread`'s `data_index` and `bg_read_info`, and the localization `State` (`chronicle:port/src/localize.cpp:34-48`) are all per-process. The two games' identities conflict: different `app_dir`, environment prefix (`DC` vs `DC2`), window title and app id (`chronicle:port/src/identity.cpp:9-11`, `chronicletwo:port/src/identity.cpp:8-11`).
+
+- **Symbol collisions.** Both ports define the same `PORT_OVERRIDE` names: `InitCDFile`, `LoadFile`, `LoadFile2`, `LoadFileBG`, `GetReadBGFile`, `ReadBG`, `ReadBGSync`, `InitReadBG`, `BreakReadBG` and `WriteFile` (`chronicle:port/src/dataread.cpp:118-310`, `chronicletwo:port/src/dataread.cpp:359-608`). Chronicle also overrides the three-argument `GetPackFile`, which ChronicleTwo's override list does not show. Both also compile `ps2/src/dataread.cpp` and many same-named game units. A merged binary needs renaming or namespacing, the way Chronicle's `port/src/linknames.cpp` already renames two aliases (`chronicle:port/CMakeLists.txt:198-205`).
+
+- **Shared names.** Seven relative paths exist in both trees, and the top-level folders `chara`, `meswin` and `sound` have different contents. A first-wins merge would hide DC2's `meswin/system_1..6.mes` behind DC1's.
+
+- **Name encoding.** Chronicle's `FoldPath` encodes non-ASCII bytes only on macOS and Windows (`chronicle:tools/dcdata/dcdata.hpp:56-63`), and writes lowercase hex. ChronicleTwo's `IndexKey` always encodes, with lowercase hex (`chronicletwo:port/src/dataread.cpp:121-125`), and its extracted disk names use uppercase `%82%C9` (observed). A shared index would need one encoding, or a Linux Chronicle tree and a DC2 tree would not match on non-ASCII names.
+
+- **Stale Chronicle tree.** The tree used here has no `languages.json` and no `normalized/`. Without `languages.json` the port prints "run dcdata extract again" and leaves `LanguageCode` at its default (`chronicle:port/src/gameloop.cpp:807-809`). Without `normalized/` the PAL item-sheet and floor-plate fixes are missing (`chronicle:tools/dcdata/dcdata.hpp:595-600, 975`, `chronicle:docs/PC.md:47-58`). Re-extracting fixes both; the snapshot must not be used as a reference for the current port.
+
+- **Missing files differ by call.** `LoadFile` asserts; `LoadFile2` and `LoadFileBG` return 0 silently; a file listed in the index but gone from disk aborts inside `ReadWhole` (`chronicle:port/src/dataread.cpp:76-83, 155-178`). Ixion's fallback must respect each caller's expectation.
+
+- **Coverage gaps in localization.** `GetPackFile(pack, index, ...)` and `GetPackFileExt` are still PS2 code and do not localize message entries (`chronicle:ps2/src/dataread.cpp:740-825`). `GetPackFileExt` is used for `img` and `cfg` members (`chronicle:port/src/edit_in.cpp:1633-1637`), so that call site does not read messages.
+
+- **Startup cost.** The port walks every file under the data root at first use (`chronicle:port/src/dataread.cpp:128-135`). A second tree doubles that walk (about 5,400 plus 10,600 files). DC2's comment records about a millisecond per file stat on the host mounts it used (`chronicletwo:port/src/dataread.cpp:152-153`); the port's walk does not stat each file, so the cost is probably lower, but it was not measured.
+
+- **Pinned versions.** Chronicle pins Kazarov `a0a5ff8`, which lacks `coherent_default_root`, `installed_save_default` and `--run-dir`. ChronicleTwo's pin (`3dc38ce`, per the brief; unverified in this check) already uses `coherent_default_root`. Ixion code written against the newer layer would need Chronicle's submodule bumped, which is a deliberate, dated change in that repository.
+
+- **Cloth and sound paths not traced.** The `battle/` sound folder and the root-level `test*.stb`, `tmp.txt`, `mapeditor.ini` were not followed into code, so their roles are unconfirmed.
+
+## Open questions
+
+- Is the DC2 message (`.mes`) word format the same as DC1's? DC1's `ReadRetail` (`chronicle:port/src/localize.cpp:201-228`) assumes a count, an offset table, and `MES_CODE_END`-terminated messages. The DC2 message reader was not located in the tree read.
+- Do DC2 `.pak` and `.pac` files read correctly through DC1's `GetPackFile`? The header size matches, but no DC2 pack was walked.
+- Which code reads DC2's `info.cfg` dialect (`FRAME_START`, `VERTEX_L`, `MODEL "x.mds";`)? ChronicleTwo's tree has no `chararead.cpp`; the character code is in other units (`character.cpp`, `charasetup.cpp`).
+- Does `gdata0.edt` written through `host0:` (`chronicle:ps2/src/editground.cpp:1606`) come back when read by name (`ps2/src/editground.cpp:1621`)? The port's `WriteFile` (`chronicle:port/src/dataread.cpp:290-310`) puts it under `save/host0/`, and the read uses the data root.
+- Which of the DC1 sub-folder roles (`opdat/norn*`, `dun/ex`, `dun/mpd_pack`, `check/`) are confirmed in code, as opposed to inferred from names?
+- Should Ixion keep two extracted trees side by side and load them through two indexes, or build one merged tree with a prefix? The second avoids rewriting either tree; the first avoids call-site prefixes. Neither was tried.
