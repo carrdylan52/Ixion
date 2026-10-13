@@ -43,7 +43,8 @@ at any town or dungeon floor, and use one developer panel for both games.
 - `docs/` the design ([DESIGN.md](docs/DESIGN.md)), the architecture options, the Hop v0 spec, a
   glossary, and [research notes](docs/research/README.md) on how both games and the shared runtime
   work.
-- `tools/` analysis scripts.
+- `tools/` analysis scripts, and `sync_upstream.py`, which catches the port forks up with upstream
+  ([docs/SYNCING.md](docs/SYNCING.md)).
 
 ## Building (Windows, llvm-mingw)
 
