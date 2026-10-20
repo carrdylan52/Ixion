@@ -10,15 +10,16 @@ namespace {
 
 void PrintUsage(FILE *out) {
     std::fputs(
-        "usage: ixion --dc1 <dll> --dc2 <dll> [options]\n"
+        "usage: ixion [--dc1 <dll>] [--dc2 <dll>] [options]\n"
         "  --dc1 <dll>          Dark Cloud module (ixion_c1.dll)\n"
         "  --dc1-args \"<args>\"  arguments for Dark Cloud (data, save, window, jump)\n"
         "  --dc2 <dll>          Dark Chronicle module (ixion_c2.dll)\n"
         "  --dc2-args \"<args>\"  arguments for Dark Chronicle\n"
-        "  --start dc1|dc2      game shown first (default dc1)\n"
+        "  --start dc1|dc2      game shown first (default first available game)\n"
         "  --auto-switch N:M    switch every N host frames, M times, then exit 0 if no parked\n"
         "                       game's receipt changed, 2 otherwise\n"
         "  --log <file>         also write the log to this file\n"
+        "  --ledger <file>      share a launcher-initialized delivery ledger with both games\n"
         "F10 travels between the games. Quit with the window close button.\n",
         out);
 }
@@ -90,6 +91,8 @@ int main(int argc, char **argv) {
             }
         } else if (arg == "--log" && hasValue) {
             options.logPath = argv[++i];
+        } else if (arg == "--ledger" && hasValue) {
+            options.ledgerPath = argv[++i];
         } else {
             std::fprintf(stderr, "ixion: unknown or incomplete option: %s\n", arg.c_str());
             PrintUsage(stderr);
@@ -97,7 +100,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!haveDc1 || !haveDc2) {
+    if (!haveDc1 && !haveDc2) {
+        std::fprintf(stderr, "ixion: give at least one of --dc1 or --dc2\n");
         PrintUsage(stderr);
         return ixion::kExitStartup;
     }

@@ -32,3 +32,13 @@ add_executable(ixion_fiber_smoke
     fiber_smoke.cpp
 )
 target_compile_definitions(ixion_fiber_smoke PRIVATE ${IXION_HOST_DEFINITIONS})
+
+# Focused host regressions. Built explicitly; no full-suite dependency.
+add_executable(ixion_host_tests EXCLUDE_FROM_ALL host_tests.cpp)
+target_include_directories(ixion_host_tests PRIVATE "${IXION_API_DIR}")
+target_compile_definitions(ixion_host_tests PRIVATE ${IXION_HOST_DEFINITIONS})
+target_link_libraries(ixion_host_tests PRIVATE SDL3::SDL3)
+
+add_executable(ixion_module_probe EXCLUDE_FROM_ALL module_probe.cpp)
+target_include_directories(ixion_module_probe PRIVATE "${IXION_API_DIR}")
+target_compile_definitions(ixion_module_probe PRIVATE ${IXION_HOST_DEFINITIONS})

@@ -1,0 +1,12 @@
+{
+  "pack": "georama-norune-r4",
+  "scale": 1.0,
+  "villagers": [
+    {"name": "Macho", "part_id": 51, "house": "e01h02", "dc1_chr": "gedit/e01/chara/p01a.chr", "vlgr_id": 420, "place_id": 160,
+     "spot_frame": "func_hito03", "mes": "gedit/e01/e01talk_1.mes", "mes_ids": [80, 81, 82, 83, 86]},
+    {"name": "Laura", "part_id": 52, "house": "e01h03", "dc1_chr": "gedit/e01/chara/p04a.chr", "vlgr_id": 421, "place_id": 161,
+     "spot_frame": "func_hito10", "mes": "gedit/e01/e01talk_1.mes", "mes_ids": [220, 221, 222, 223, 226]},
+    {"name": "Paige", "part_id": 54, "house": "e01h10", "dc1_chr": "gedit/e01/chara/p09a.chr", "vlgr_id": 422, "place_id": 162,
+     "spot_frame": "func_hito06", "mes": "gedit/e01/e01talk_1.mes", "mes_ids": [140, 141, 142, 143, 146]}
+  ]
+}

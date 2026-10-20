@@ -1,0 +1,6 @@
+{
+  "room": "d01inter2",
+  "spawn": {"donor": [0, 0, 295], "note": "in front of the entrance door; in_2 (0,0,320) is 6 units behind its collision"},
+  "enemy_spawn": {"donor": [0, 0, 0]},
+  "exit": {"donor": [0, 0, -300], "note": "in front of the closed gate; out_2 (0,-2,-333) is 1 unit behind the gate collision"}
+}

@@ -1,0 +1,11 @@
+{
+  "pack": "georama-norune-r2",
+  "scale": 1.0,
+  "parts": [
+    {"id": 50, "scene": "e01t01", "name": "Norune tree", "comment": "DC1 e01t01 tree", "max_num": 16},
+    {"id": 51, "scene": "e01h02", "name": "Macho House", "comment": "DC1 e01h02 Macho house", "drop": "__CF", "max_num": 4},
+    {"id": 52, "scene": "e01h03", "name": "Laura House", "comment": "DC1 e01h03 Laura house", "drop": "__CF", "max_num": 4},
+    {"id": 54, "scene": "e01h10", "name": "Paige House", "comment": "DC1 e01h10 Paige house", "drop": "__CF", "max_num": 4},
+    {"id": 55, "scene": "e01h06", "name": "Norune e01h06", "comment": "refusal probe: fixed building", "optional": true}
+  ]
+}

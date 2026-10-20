@@ -14,7 +14,7 @@ enum ExitCode : int {
     kExitOk = 0,
     kExitStartup = 1,      // bad arguments, SDL failure or a module that will not load
     kExitMismatch = 2,     // --auto-switch: a parked game's receipt changed
-    kExitBootFailed = 3,   // a game did not reach its first checkpoint in time
+    kExitBootFailed = 3,   // a game did not reach scene readiness in time
     kExitGameReturned = 4, // a game's run() returned
     kExitIncomplete = 5,   // --auto-switch: the program ended before all M switches ran
 };
@@ -30,6 +30,7 @@ struct Options {
     uint32_t autoEvery = 0; // host frames between switches
     uint32_t autoCount = 0; // switches before the summary
     std::string logPath;    // optional file that mirrors the log
+    std::string ledgerPath; // launcher-initialized delivery ledger shared by both modules
 };
 
 // Splits an argument string on whitespace. Double quotes group words and are removed; backslashes
@@ -49,7 +50,7 @@ void LogLine(const char *fmt, ...);
 // Flushes the log and ends the process with TerminateProcess. Never returns.
 [[noreturn]] void Quit(int code);
 
-// Loads both games, boots them, and runs the main loop. Returns the exit code.
+// Loads supplied games, pre-checks their data, boots available ones, and runs the main loop.
 int RunHost(const Options &options);
 
 }  // namespace ixion

@@ -1,3 +1,8 @@
+> On `showcase-crossover`, use the committed recursive pins. Do not run this
+> upstream-sync workflow against the showcase: its data generation and donor
+> provenance gates require an explicit migration first. The workflow below
+> describes the earlier Hop branches.
+
 # Keeping the port forks in step with upstream
 
 Ixion builds on the community ports without changing them in place. Each port is a submodule on a

@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -39,6 +40,7 @@ struct Game {
     LPVOID fiber = nullptr;
     LPVOID resume = nullptr; // the fiber to switch to when the host resumes this game
     std::deque<SDL_Event> events;
+    bool available = false; // supplied module whose own data preflight passed
     bool checkpointed = false;
     bool parked = false;    // the next return from checkpoint reports that the game was parked
     bool parkValid = false; // a receipt was taken when this game was switched away from
@@ -64,7 +66,7 @@ struct HostState {
 
 Game *GameById(HostState *h, uint32_t id) {
     if (id < 1 || id > 2) return nullptr;
-    return &h->games[id - 1];
+    return h->games[id - 1].available ? &h->games[id - 1] : nullptr;
 }
 
 // Host callbacks receive the HostState as their user pointer.
@@ -110,14 +112,17 @@ bool InspectGame(const Game &g, IxionReceipt *out) {
 // The fields that must not move while a game is parked.
 bool SameReceipt(const IxionReceipt &a, const IxionReceipt &b) {
     return a.logic_frames == b.logic_frames && a.clock_ticks == b.clock_ticks && a.map == b.map &&
-           a.floor == b.floor && std::memcmp(a.player_pos, b.player_pos, sizeof a.player_pos) == 0;
+           a.floor == b.floor && a.mode == b.mode && a.character == b.character &&
+           a.scene_ready == b.scene_ready && a.audio_frames == b.audio_frames &&
+           a.audio_paused != 0 && b.audio_paused != 0 && std::memcmp(a.player_pos, b.player_pos, sizeof a.player_pos) == 0;
 }
 
 void LogReceipt(const Game &g, const char *tag, const IxionReceipt &r) {
-    LogLine("  %s %s: frames=%llu ticks=%llu mode=%d map=%d floor=%d char=%d pos=(%.3f, %.3f, %.3f) place=\"%s\"",
+    LogLine("  %s %s: frames=%llu ticks=%llu mode=%d map=%d floor=%d char=%d pos=(%.3f, %.3f, %.3f) place=\"%s\" ready=%u audio_paused=%u audio_frames=%llu",
             g.label, tag, static_cast<unsigned long long>(r.logic_frames),
             static_cast<unsigned long long>(r.clock_ticks), r.mode, r.map, r.floor, r.character,
-            r.player_pos[0], r.player_pos[1], r.player_pos[2], r.place);
+            r.player_pos[0], r.player_pos[1], r.player_pos[2], r.place, r.scene_ready, r.audio_paused,
+            static_cast<unsigned long long>(r.audio_frames));
 }
 
 // Takes the receipt of a game that has just been switched away from, at its checkpoint.
@@ -268,7 +273,29 @@ Game *OwnerOf(HostState &h, SDL_WindowID id) {
 // Routes one SDL event. Window events go to the owning game, other events with a window go to the
 // game that owns that window, and events without a known window go to the active game. F10 is the
 // travel hotkey and goes to no game.
+// SDL pointer payloads are only valid until SDL pumps again. Hop has no text/drop/custom
+// consumer: reject them before copying into a queue, including pointer-bearing user events.
+bool QueueSafe(const SDL_Event &ev) {
+    return ev.type != SDL_EVENT_TEXT_EDITING && ev.type != SDL_EVENT_TEXT_EDITING_CANDIDATES &&
+           ev.type != SDL_EVENT_TEXT_INPUT && ev.type != SDL_EVENT_CLIPBOARD_UPDATE &&
+           !(ev.type >= SDL_EVENT_DROP_FILE && ev.type <= SDL_EVENT_DROP_POSITION) &&
+           ev.type < SDL_EVENT_USER;
+}
+
+bool InputEvent(const SDL_Event &ev) {
+    return (ev.type >= SDL_EVENT_KEY_DOWN && ev.type <= SDL_EVENT_KEYMAP_CHANGED) ||
+           (ev.type >= SDL_EVENT_MOUSE_MOTION && ev.type <= SDL_EVENT_MOUSE_WHEEL) ||
+           (ev.type >= SDL_EVENT_JOYSTICK_AXIS_MOTION && ev.type <= SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED) ||
+           (ev.type >= SDL_EVENT_FINGER_DOWN && ev.type <= SDL_EVENT_FINGER_CANCELED) ||
+           (ev.type >= SDL_EVENT_PEN_PROXIMITY_IN && ev.type <= SDL_EVENT_PEN_AXIS);
+}
+
+void DiscardInput(Game &g) {
+    std::erase_if(g.events, InputEvent);
+}
+
 void RouteEvent(HostState &h, const SDL_Event &ev) {
+    if (!QueueSafe(ev)) return;
     switch (ev.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -288,7 +315,9 @@ void RouteEvent(HostState &h, const SDL_Event &ev) {
     SDL_WindowID id = 0;
     if (EventWindowId(ev, &id)) target = OwnerOf(h, id);
     if (!target) target = &h.games[h.active];
-    target->events.push_back(ev);
+    if (target->available && (!InputEvent(ev) || target == &h.games[h.active])) {
+        target->events.push_back(ev);
+    }
 }
 
 void PumpEvents(HostState &h) {
@@ -311,6 +340,13 @@ void BuildArgv(Game &g) {
     g.argv.push_back(nullptr);
 }
 
+bool ValidApi(const IxionApi *api, uint32_t gameId) {
+    // Check the size prefix before reading any later field or function pointer.
+    return api && api->size >= sizeof(IxionApi) && api->abi_version == IXION_ABI_VERSION &&
+           api->game_id == gameId && api->bind && api->run && api->activate && api->window &&
+           api->inspect && api->preflight;
+}
+
 bool LoadGame(HostState &h, Game &g) {
     g.fullPath = FullPath(g.path);
     g.module = LoadLibraryExW(g.fullPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
@@ -326,13 +362,9 @@ bool LoadGame(HostState &h, Game &g) {
     }
     IxionGetApiFn getApi = reinterpret_cast<IxionGetApiFn>(proc);
     g.api = getApi(IXION_ABI_VERSION);
-    if (!g.api || g.api->abi_version != IXION_ABI_VERSION || g.api->game_id != g.id) {
+    if (!ValidApi(g.api, g.id)) {
         LogLine("[%s] %s does not speak ABI %u for this game", g.label, g.path.c_str(),
                 static_cast<unsigned>(IXION_ABI_VERSION));
-        return false;
-    }
-    if (!g.api->bind || !g.api->run || !g.api->activate || !g.api->window || !g.api->inspect) {
-        LogLine("[%s] %s is missing required API entries", g.label, g.path.c_str());
         return false;
     }
     if (g.api->bind(&h.table) != 0) {
@@ -355,30 +387,37 @@ bool CreateGameFiber(Game &g) {
     return true;
 }
 
-// Runs dc1 to its first checkpoint, then dc2, the same way for both. Each game is parked after its
+// Runs each available game to a completed scene frame. Each game is parked after its
 // boot so the receipts for the later comparison exist, and its audio is paused until it is shown.
 ExitCode Boot(HostState &h) {
     for (Game &g : h.games) {
-        LogLine("boot: running %s to its first checkpoint", g.label);
+        if (!g.available) continue;
+        h.active = static_cast<int>(&g - h.games);
+        LogLine("boot: running %s until a scene frame is ready", g.label);
         auto started = std::chrono::steady_clock::now();
-        ResumeGame(h, g);
-        double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        if (g.finished) {
-            LogLine("boot failed: %s returned (code %d) before its first checkpoint", g.label, g.exitCode);
-            return kExitGameReturned;
+        unsigned checkpoints = 0;
+        IxionReceipt receipt{};
+        for (;;) {
+            ResumeGame(h, g);
+            ++checkpoints;
+            const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+            if (g.finished) {
+                LogLine("boot failed: %s returned (code %d) before scene readiness", g.label, g.exitCode);
+                return kExitGameReturned;
+            }
+            if (!g.checkpointed || seconds > kBootTimeoutSeconds) {
+                LogLine("boot failed: %s not ready after %.1f s (%u checkpoints)", g.label, seconds, checkpoints);
+                return kExitBootFailed;
+            }
+            if (h.quit) return kExitIncomplete;
+            if (InspectGame(g, &receipt) && receipt.scene_ready) {
+                g.api->activate(0);
+                Park(g); // after audio pause has completed, so callback work is inside the baseline
+                LogLine("boot: %s scene ready after %.2f s and %u checkpoints", g.label, seconds, checkpoints);
+                LogReceipt(g, "boot ready", g.parkReceipt);
+                break;
+            }
         }
-        if (!g.checkpointed) {
-            LogLine("boot failed: %s did not checkpoint", g.label);
-            return kExitBootFailed;
-        }
-        if (seconds > kBootTimeoutSeconds) {
-            LogLine("boot failed: %s took %.1f s to reach its first checkpoint (limit %d s)", g.label,
-                    seconds, kBootTimeoutSeconds);
-            return kExitBootFailed;
-        }
-        Park(g);
-        g.api->activate(0);
-        LogLine("boot: %s reached its first checkpoint after %.2f s", g.label, seconds);
     }
     return kExitOk;
 }
@@ -394,6 +433,9 @@ void ShowStart(HostState &h) {
         LogLine("warning: %s has no window yet", start.label);
     }
     if (SDL_Window *w = WindowOf(other)) SDL_HideWindow(w);
+    CheckPark(h, start, "start check");
+    DiscardInput(start);
+    start.parked = true;
     start.api->activate(1);
     LogLine("active: %s", start.label);
 }
@@ -403,12 +445,16 @@ void ShowStart(HostState &h) {
 void Travel(HostState &h) {
     Game &out = h.games[h.active];
     Game &in = h.games[1 - h.active];
+    if (!in.available) {
+        LogLine("travel refused: F10 requires two available games");
+        return;
+    }
     if (in.finished) {
         LogLine("travel refused: %s has already ended", in.label);
         return;
     }
-    Park(out);
     out.api->activate(0);
+    Park(out);
     if (SDL_Window *w = WindowOf(out)) SDL_HideWindow(w);
     if (SDL_Window *w = WindowOf(in)) {
         SDL_ShowWindow(w);
@@ -416,6 +462,8 @@ void Travel(HostState &h) {
     } else {
         LogLine("warning: %s has no window", in.label);
     }
+    CheckPark(h, in, "resume check");
+    DiscardInput(in);
     in.api->activate(1);
     in.parked = true; // its checkpoint returns 1 when it is resumed below
     h.switches++;
@@ -438,7 +486,7 @@ void Travel(HostState &h) {
 int Summary(HostState &h) {
     // The game parked by the last switch is never resumed, so its receipt is checked here instead.
     for (Game &g : h.games) {
-        if (&g != &h.games[h.active]) CheckPark(h, g, "end check");
+        if (g.available && &g != &h.games[h.active]) CheckPark(h, g, "end check");
     }
     LogLine("auto-switch summary: %u switches over %llu host frames, %u receipt mismatches", h.switches,
             static_cast<unsigned long long>(h.frames), h.mismatches);
@@ -548,6 +596,26 @@ void Quit(int code) {
 }
 
 int RunHost(const Options &options) {
+    if (!options.ledgerPath.empty()) {
+        const std::wstring path = FullPath(options.ledgerPath);
+        const DWORD attributes = GetFileAttributesW(path.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+            !SetEnvironmentVariableW(L"IXION_LEDGER", path.c_str())) {
+            LogLine("ixion: --ledger needs an existing launcher-initialized file");
+            return kExitStartup;
+        }
+        // Delivery is only for a launcher-made disposable run folder
+        // (tools/ledger.py writes the marker); the games re-check it.
+        const size_t slash = path.find_last_of(L"\\/");
+        const std::wstring marker = (slash == std::wstring::npos ? std::wstring() : path.substr(0, slash + 1)) +
+                                    L"ixion-disposable-run.json";
+        const DWORD marker_attributes = GetFileAttributesW(marker.c_str());
+        if (marker_attributes == INVALID_FILE_ATTRIBUTES || (marker_attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            SetEnvironmentVariableW(L"IXION_LEDGER", nullptr);
+            LogLine("ixion: --ledger refused: its folder lacks ixion-disposable-run.json; initialize a fresh run folder with tools/ledger.py");
+            return kExitStartup;
+        }        LogLine("ixion ledger: %s", options.ledgerPath.c_str());
+    }
     HostState h;
     h.options = options;
 
@@ -568,9 +636,8 @@ int RunHost(const Options &options) {
         BuildArgv(g);
         std::string joined;
         for (const std::string &arg : g.args) joined += " [" + arg + "]";
-        LogLine("[%s] run args:%s", g.label, joined.c_str());
+        if (!g.path.empty()) LogLine("[%s] run args:%s", g.label, joined.c_str());
     }
-    h.active = options.startGame == IXION_GAME_DARK_CHRONICLE ? 1 : 0;
 
     h.table.size = sizeof(IxionHost);
     h.table.abi_version = IXION_ABI_VERSION;
@@ -592,15 +659,36 @@ int RunHost(const Options &options) {
         return kExitStartup;
     }
 
+    unsigned available = 0;
     for (Game &g : h.games) {
+        if (g.path.empty()) continue;
         if (!LoadGame(h, g)) return kExitStartup;
+        // Keep the original argv for run: each game's PathsConsumeArgs compacts its view.
+        auto args = g.argv;
+        if (g.api->preflight(static_cast<int>(g.args.size()), args.data()) != 0) {
+            LogLine("[%s] unavailable: game data pre-check failed; extract the disc once or pass --data <dir>", g.label);
+            continue;
+        }
+        g.available = true;
+        ++available;
     }
+    if (available == 0) {
+        LogLine("startup refused: no games have available data");
+        return kExitStartup;
+    }
+    if (options.autoSwitch && available < 2) {
+        LogLine("startup refused: --auto-switch requires two available games");
+        return kExitStartup;
+    }
+    int start = options.startGame == IXION_GAME_DARK_CHRONICLE ? 1 : 0;
+    if (!h.games[start].available) start = 1 - start;
     for (Game &g : h.games) {
-        if (!CreateGameFiber(g)) return kExitStartup;
+        if (g.available && !CreateGameFiber(g)) return kExitStartup;
     }
 
     const ExitCode booted = Boot(h);
     if (booted != kExitOk) return booted;
+    h.active = start;
     ShowStart(h);
     return MainLoop(h);
 }

@@ -1,82 +1,75 @@
-# Ixion
+# Ixion — Dark Cloud × Dark Chronicle
 
-Ixion joins Dark Cloud and Dark Chronicle into one program: play any character from either cast,
-visit any town or dungeon from either world, and use Dark Chronicle's time travel to cross between
-the two. It is named after the flying, time-travelling train built at the Lunatic Wisdom
-Laboratories in Dark Chronicle.
+A fan-made crossover experiment built on the community PC ports of **Dark Cloud**
+and **Dark Chronicle / Dark Cloud 2**. The goal is to combine places, characters
+and gameplay systems from both games in one program.
 
-It is a fan-made proof of concept built on top of the community PC ports, not a replacement for
-them:
+**This is the `showcase-crossover` source branch.** It contains the later crossover
+demo, including Opar's Dark Cloud behaviour running inside Dark Chronicle. `main`
+contains the earlier Hop v0 prototype. This branch pins the versions used by the
+working crossover; migration to current upstream asset formats is separate work.
 
-- [TheMoonPeople/Chronicle](https://github.com/TheMoonPeople/Chronicle): the Dark Cloud
-  decompilation and PC port.
-- [TheMoonPeople/ChronicleTwo](https://github.com/TheMoonPeople/ChronicleTwo): the Dark Chronicle
-  decompilation and PC port.
-- [TheMoonPeople/Kazarov](https://github.com/TheMoonPeople/Kazarov): the build system and runtime
-  both ports share.
+## What's here
 
-Those projects carry on as they are. Ixion builds on them, and keeps its changes to them as small
-branches that could be offered back.
+| Experiment | Implementation |
+|---|---|
+| Opar and other DC1 monsters in DC2 | Donor script native table, motion/collision adaptation, native DC2 monster slots and combat. |
+| DC1 rooms in DC2 | Offline geometry, texture and collision conversion; room encounters, props and exit markers. |
+| Toan, Goro, Ungaga and Xiao in DC2 | Converted bodies plus isolated DC1 combat code and lifecycle adapters. |
+| Monica as Opar | Transformation profile and an experimental donor behaviour mode. |
+| Ridepod and Vanguard in DC1 | Isolated donor mechanics, model converters and host-side collision/combat bridges. |
+| Georama across both games | Norune houses/villagers in DC2 and a DC2 Shed in Norune. |
+| Both games resident | Windows fiber host; F10 switches at frame checkpoints. A bounded kill ledger can deliver Water across games. |
 
-No game data is stored here. Both games' data come from your own discs, extracted the same way as
-for the two ports.
+These are experiments with different levels of coverage, not a finished merged
+campaign. See [the demo guide](tools/playtest/PLAYTEST.md) for the 29 modes and
+their specific limits. Six modes have a supplied pack recipe; the other 23
+are source prototypes with pack recipes not yet published. Physical controller
+feel, audible output and complete
+campaign progression remain unqualified.
 
-## Status
+## Start here
 
-**Hop v0** works on Windows: `ixion.exe` loads both games as modules, keeps both resident, and
-switches between them at the end of a frame. Press F10 in Norune and Palm Brinks appears exactly
-where you left it; press it again and Norune resumes on the frame it left. Nothing crosses between
-the games yet. See [docs/HOP-V0.md](docs/HOP-V0.md) for the design, the acceptance checks and the
-open items.
-
-Next: the **Ixion launcher**. Pick Dark Cloud, Dark Chronicle or both (each disc optional), start
-at any town or dungeon floor, and use one developer panel for both games.
-
-## Layout
-
-- `host/` the host program (`ixion.exe`) and a fiber self-test. It links only SDL3 and never sees
-  game headers.
-- `include/ixion_api.h` the plain C interface between the host and the game modules.
-- `games/chronicle`, `games/chronicletwo` the two ports as submodules, on branches that add the
-  module build (`IXION_BUILD_PLUGIN`). Each one's `tools/kazarov` submodule points at a Kazarov
-  branch that adds embedded mode.
-- `docs/` the design ([DESIGN.md](docs/DESIGN.md)), the architecture options, the Hop v0 spec, a
-  glossary, and [research notes](docs/research/README.md) on how both games and the shared runtime
-  work.
-- `tools/` analysis scripts, and `sync_upstream.py`, which catches the port forks up with upstream
-  ([docs/SYNCING.md](docs/SYNCING.md)).
-
-## Building (Windows, llvm-mingw)
-
-```
-git clone --recurse-submodules https://github.com/carrdylan52/Ixion
+```sh
+git clone --branch showcase-crossover --recurse-submodules https://github.com/carrdylan52/Ixion.git
+cd Ixion
+python -B -m unittest discover -s tests -p "test_*.py"
 ```
 
-Each port builds as described in its own README, with two extra CMake options that also build its
-module:
+The synthetic converter/protocol tests need Python 3.10+ and no game data. Cases
+that need an owner's extraction skip when it is absent. Building/running the
+games requires Windows, the pinned toolchain and your own discs.
 
-```
--DIXION_BUILD_PLUGIN=ON -DIXION_API_DIR=<this repo>/include
-```
+**[Build and reproduce the Opar demo →](docs/SHOWCASE.md)**
 
-That gives `ixion_c1.dll` (Dark Cloud) and `ixion_c2.dll` (Dark Chronicle). Build the host with
-`host/build-windows.ps1` (see [host/README.md](host/README.md)), then put `ixion.exe`, both modules
-and one shared set of runtime libraries in one folder and run:
+Opar's implementation is in
+[`ixion_dc1_monster.cpp`](https://github.com/carrdylan52/ChronicleTwo/blob/showcase-crossover/port/src/ixion_dc1_monster.cpp).
+The source-only converters are in [`tools/`](tools/), including
+[`monster_converter.py`](tools/monster_converter.py) and
+[`room_converter.py`](tools/room_converter.py).
+No disc assets, extracted packs, saves or playable binary bundle are included.
 
-```
-ixion.exe --dc1 ixion_c1.dll --dc1-args "--data <dc1 data> --save <dc1 save> --jump edit:0"
-          --dc2 ixion_c2.dll --dc2-args "--data <dc2 data> --save <dc2 save> --jump town:10"
-```
+## Architecture and upstream
 
-Use fresh save folders.
+`host/` loads `ixion_c1.dll` and `ixion_c2.dll` through the plain C interface in
+`include/ixion_api.h`. Each port keeps its own engine state; adapters live in the
+PC port layer. The matching source branches are pinned as recursive submodules.
+Read [host/README.md](host/README.md), [the original Hop design](docs/HOP-V0.md),
+and [the room converter format](docs/room-converter.md) for implementation details.
+The notes under `docs/research/` describe earlier investigations, not current
+acceptance claims.
 
-## References
+Ixion depends on the work of:
 
-Notes cite code with `chronicle:`, `chronicletwo:` and `kazarov:` prefixes for paths inside the
-three upstream repositories, and `ixion:` for paths in this repository.
+- [TheMoonPeople/Chronicle](https://github.com/TheMoonPeople/Chronicle) — Dark Cloud decompilation and PC port.
+- [TheMoonPeople/ChronicleTwo](https://github.com/TheMoonPeople/ChronicleTwo) — Dark Chronicle decompilation and PC port.
+- [TheMoonPeople/Kazarov](https://github.com/TheMoonPeople/Kazarov) — shared build/runtime infrastructure.
+
+Please reproduce Ixion-specific issues on these pinned branches before reporting
+them here. The upstream ports develop independently.
 
 ## License
 
-Ixion's own files are under the MIT License (see [LICENSE](LICENSE)). The submodules keep their own
-terms. Dark Cloud and Dark Chronicle are trademarks of their owners; this project is not affiliated
-with them.
+Ixion's own source is [MIT licensed](LICENSE); submodules retain their upstream terms.
+Dark Cloud and Dark Chronicle belong to their respective owners. This project
+is unofficial and unaffiliated with them.

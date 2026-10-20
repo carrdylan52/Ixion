@@ -1,0 +1,6 @@
+{
+  "room": "d01boss",
+  "spawn": {"frame": "event01_2", "part": "d01g01_0.mds", "note": "boss-start trigger, cfg PT_MARKER event 500"},
+  "enemy_spawn": {"donor": [0, 0, -16], "note": "authored: centre of the cross walkway"},
+  "exit": {"donor": [0, 0, -620], "note": "landing in front of its back wall; in_2 (0,0,-640) lies on the wall plane"}
+}

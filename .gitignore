@@ -1,3 +1,17 @@
 __pycache__/
 *.pyc
 tools/sync.local.json
+/build*/
+/showcase-local/
+/data*/
+/port_data/
+/packs/
+/runs/
+*.log
+.env
+.env.*
+
+/tools/playtest/bin/
+/tools/playtest/packs/
+/tools/playtest/runs/
+/tools/playtest/data*/

@@ -3,7 +3,7 @@
  * Each game (Dark Cloud, Dark Chronicle) is built as a shared library that exports exactly one
  * symbol, ixion_get_api. Everything else in the module -- game globals, its private copy of
  * Kazarov, its renderer, mixer and clock -- stays hidden inside it. The host (ixion.exe) loads
- * both modules, runs each game on its own fiber, and switches between them only when a game
+ * one or both modules, runs each available game on its own fiber, and switches only when a game
  * reaches a checkpoint (the end of a graphics frame).
  *
  * Only plain C types cross this boundary: no C++ objects, no STL, no exceptions, no game pointers
@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define IXION_ABI_VERSION 1u
+#define IXION_ABI_VERSION 2u
 
 #if defined(_WIN32)
 #define IXION_EXPORT __declspec(dllexport)
@@ -52,6 +52,9 @@ typedef struct IxionReceipt {
     int32_t  character;     /* active playable character, -1 if unknown */
     float    player_pos[3]; /* active character's world position, all 0 if unknown */
     char     place[48];     /* a human-readable place name if the module knows one, else "" */
+    uint32_t scene_ready;   /* a scene loop has completed a playable/title/menu frame */
+    uint32_t audio_paused;  /* output successfully paused, including absent output */
+    uint64_t audio_frames;  /* sample frames rendered by this module's mixer */
 } IxionReceipt;
 
 /* A request to travel, from a game or from the host. Reserved for v1 (stations); the v0 hotkey
@@ -113,6 +116,10 @@ typedef struct IxionApi {
 
     /* Fills *out (out->size set by the caller) and returns 0, or returns nonzero if unavailable. */
     int (*inspect)(IxionReceipt *out);
+
+    /* Before run: use the game's own data recognizer with these arguments. Returns 0 when
+     * available, nonzero to omit this game. Must not open windows or run first-time setup. */
+    int (*preflight)(int argc, char **argv);
 } IxionApi;
 
 /* The module's only export. Returns null if the module does not speak this ABI version. */

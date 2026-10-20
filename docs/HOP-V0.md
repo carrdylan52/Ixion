@@ -20,6 +20,32 @@ runs it until the game reaches a checkpoint at the end of a frame, where it may 
 game. A parked game's stacks, globals, GPU resources and window stay resident, so resuming it is
 instant and loses nothing.
 
+## Round 3 candidate — 2026-10-14
+
+The host now accepts either module or both. ABI version 2 adds each module's own data preflight,
+scene readiness, audio pause status and rendered sample-frame counter. All three binaries must
+be rebuilt together. A module with missing data is omitted before any game window/setup boots;
+if none remain, startup fails. The first available game starts, with DC1 preferred. F10 is refused
+in single-game mode, and `--auto-switch` requires two available games before boot.
+
+Boot keeps resuming loading checkpoints until a scene loop completes a frame. Activation clears
+live cached input and restores the incoming game's gyro policy; the resumed game fiber pumps
+routed events and refreshes its retail pad samples before gameplay. DC2 always releases cursor
+ownership on deactivation. Audio pause returns success/failure, pause finishes before the park
+baseline is sampled, and park checks include mixer work, mode and character. Text/drop/clipboard
+and user events carrying pointers are discarded instead of retained in a queue.
+
+Hosted DC2 frame budgets return through `run()` (host exit 4), including budgets reached during
+initialization; the loop returns once the current initialization completes. Standalone frame
+budgets retain their original process-exit behavior. Embedded missing-data runs also return 3,
+so a preflight/run race cannot open the setup UI or terminate the host. DC2's embedded window
+shutdown balances its own SDL video reference while retaining the host's reference.
+
+See `host/README.md` for focused regression targets and current launch behavior. The October 13
+acceptance/status below is historical; the showcase guide records the current scope and remaining
+manual/audio/controller qualification. Process-wide shutdown, controller
+LED/rumble policy and physical controller feel remain outside this round's fixes.
+
 ## The pieces
 
 ### 1. The ABI (`include/ixion_api.h`)
